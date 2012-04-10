@@ -17,19 +17,24 @@ void metadata(AVFormatContext *format_ctx)
           printf("%s: %s\n", tag->key, tag->value);
 }
 
-int get_frame(AVCodecContext *codec_ctx, AVFormatContext *fmt_ctx, AVFrame *frame) {
+int get_frame(AVCodecContext *codec_ctx, AVFormatContext *fmt_ctx, int video_stream, AVFrame *frame) {
      AVPacket pkt;
      int got_picture;
 
-     av_init_packet(&pkt);
-     av_read_packet(fmt_ctx, &pkt);
-     avcodec_decode_video2(codec_ctx, frame, &got_picture, &pkt);
+     while (av_read_frame(fmt_ctx, &pkt) >= 0) {
+          if (pkt.stream_index == video_stream)
+               avcodec_decode_video2(codec_ctx, frame, &got_picture, &pkt);
      
-     if (got_picture)
-          return 1;
+          if (got_picture) {
+               av_free_packet(&pkt);
+               return 1;
+          }
+     }
 
+     av_free_packet(&pkt);
      return 0;
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -37,7 +42,7 @@ int main(int argc, char *argv[])
      int video_stream;
      AVCodecContext *codec_ctx;
      AVCodec *codec;
-     AVFrame *frame;
+     AVFrame *frame, *rgb_frame;
      
      av_register_all();
      
@@ -77,7 +82,9 @@ int main(int argc, char *argv[])
      }
 
      frame = avcodec_alloc_frame();
-     if (get_frame(codec_ctx, format_ctx, frame) == 0) {
+     rgb_frame = avcodec_alloc_frame();
+
+     if (get_frame(codec_ctx, format_ctx, video_stream, frame) == 0) {
           fprintf(stderr, "ERROR: Failed to decode video.\n");
           exit(1);
      }
@@ -86,6 +93,8 @@ int main(int argc, char *argv[])
      Window w;
      GC gc;
      XImage *ximg;
+     XWindowAttributes a;
+     void *unaligned;
 
      if ((d = XOpenDisplay(NULL)) == NULL) {
           fprintf(stderr, "ERROR: Failed to open display.\n");
@@ -97,5 +106,33 @@ int main(int argc, char *argv[])
      XFlush(d);
 
      gc = XCreateGC(d, w, 0, NULL);
-     // ximg = XCreateImage(d, w, )
+     XGetWindowAttributes(d, w, &a);
+     ximg = XCreateImage(d, a.visual, 24, ZPixmap, 0, NULL, frame->width, frame->height, 8, 0);
+     unaligned = malloc(ximg->bytes_per_line * frame->height + 32);
+     ximg->data = unaligned + 16 - ((long)unaligned & 15);
+     memset(ximg->data, 0, ximg->bytes_per_line * frame->height);
+
+     struct SwsContext *sws_ctx = NULL;
+     uint8_t *dst[4] = {NULL};
+     int dstStride[4] = {0};
+
+     dst[0] = ximg->data;
+     dstStride[0] = frame->width * ((32 + 7) / 8);
+     while (get_frame(codec_ctx, format_ctx, video_stream, frame) != 0) {
+          sws_ctx = sws_getCachedContext(sws_ctx,
+                                         frame->width, frame->height, frame->format, 
+                                         frame->width, frame->height, PIX_FMT_RGB32, 
+                                         SWS_BICUBIC, NULL, NULL, 0);
+
+          if (sws_ctx == NULL) {
+               fprintf(stderr, "Failed to allocate SwsContext.\n");
+               exit(1);
+          }
+     
+
+          sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, dst, dstStride);
+
+          XPutImage(d, w, gc, ximg, 0, 0, 0, 0, frame->width, frame->height);
+          XFlush(d);
+     }
 }
