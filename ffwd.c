@@ -1,6 +1,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
+
 #include <X11/Xlib.h>
 
 #include <stdio.h>
@@ -35,6 +36,28 @@ int get_frame(AVCodecContext *codec_ctx, AVFormatContext *fmt_ctx, int video_str
      return 0;
 }
 
+XImage *get_ximg(Display *d, Visual *v, int width, int height) {
+     void *unaligned;
+     XImage *ximg;
+
+     ximg = XCreateImage(d, v, 24, ZPixmap, 0, NULL, width, height, 8, 0);
+     unaligned = malloc(ximg->bytes_per_line * height + 32);
+     ximg->data = unaligned + 16 - ((long)unaligned & 15);
+     memset(ximg->data, 0, ximg->bytes_per_line * height);
+
+     return ximg;
+}
+
+void usage(char *executable) {
+     printf("usage: %s [file]\n", executable);
+     exit(0);
+}
+
+/* callback to draw frame */
+void draw_frame_cb(EV_P_ ev_timer *w, int revents) {
+
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -42,12 +65,15 @@ int main(int argc, char *argv[])
      int video_stream;
      AVCodecContext *codec_ctx;
      AVCodec *codec;
-     AVFrame *frame, *rgb_frame;
+     AVFrame *frame;
+
+     if (argc != 2)
+          usage(argv[0]);
      
      av_register_all();
      
      if (avformat_open_input(&format_ctx, argv[1], NULL, NULL) != 0) {
-          fprintf(stderr, "ERROR: Failed to open file %s\n", argv[1]);
+          fprintf(stderr, "ERROR: Failed to open file %s.\n", argv[1]);
           exit(1);
      }
 
@@ -82,8 +108,6 @@ int main(int argc, char *argv[])
      }
 
      frame = avcodec_alloc_frame();
-     rgb_frame = avcodec_alloc_frame();
-
      if (get_frame(codec_ctx, format_ctx, video_stream, frame) == 0) {
           fprintf(stderr, "ERROR: Failed to decode video.\n");
           exit(1);
@@ -94,7 +118,6 @@ int main(int argc, char *argv[])
      GC gc;
      XImage *ximg;
      XWindowAttributes a;
-     void *unaligned;
 
      if ((d = XOpenDisplay(NULL)) == NULL) {
           fprintf(stderr, "ERROR: Failed to open display.\n");
@@ -103,34 +126,32 @@ int main(int argc, char *argv[])
 
      w = XCreateWindow(d, DefaultRootWindow(d), 0, 0, 100, 100, 0, CopyFromParent, InputOutput, CopyFromParent, 0, NULL);
      XMapWindow(d, w);
-     XFlush(d);
-
      gc = XCreateGC(d, w, 0, NULL);
      XGetWindowAttributes(d, w, &a);
-     ximg = XCreateImage(d, a.visual, 24, ZPixmap, 0, NULL, frame->width, frame->height, 8, 0);
-     unaligned = malloc(ximg->bytes_per_line * frame->height + 32);
-     ximg->data = unaligned + 16 - ((long)unaligned & 15);
-     memset(ximg->data, 0, ximg->bytes_per_line * frame->height);
+     ximg = get_ximg(d, a.visual, frame->width, frame->height);
 
      struct SwsContext *sws_ctx = NULL;
      uint8_t *dst[4] = {NULL};
      int dstStride[4] = {0};
 
+     sws_ctx = sws_getCachedContext(sws_ctx,
+                                    frame->width, frame->height, frame->format, 
+                                    frame->width, frame->height, PIX_FMT_RGB32, 
+                                    SWS_BICUBIC, NULL, NULL, 0);
+
+     if (sws_ctx == NULL) {
+               fprintf(stderr, "Failed to allocate SwsContext.\n");
+               exit(1);
+     }
+
      dst[0] = ximg->data;
      dstStride[0] = frame->width * ((32 + 7) / 8);
      while (get_frame(codec_ctx, format_ctx, video_stream, frame) != 0) {
-          sws_ctx = sws_getCachedContext(sws_ctx,
-                                         frame->width, frame->height, frame->format, 
-                                         frame->width, frame->height, PIX_FMT_RGB32, 
-                                         SWS_BICUBIC, NULL, NULL, 0);
-
-          if (sws_ctx == NULL) {
-               fprintf(stderr, "Failed to allocate SwsContext.\n");
-               exit(1);
-          }
-     
+          double pts;
 
           sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, dst, dstStride);
+          if (frame->pts == AV_NOPTS_VALUE)
+               pts = 1/av_q2d(frame->time_base);
 
           XPutImage(d, w, gc, ximg, 0, 0, 0, 0, frame->width, frame->height);
           XFlush(d);
