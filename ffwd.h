@@ -1,4 +1,4 @@
-#ifndef _FFWD
+#ifndef FFWD
 
 #define FFWD
 #endif
