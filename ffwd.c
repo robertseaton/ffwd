@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "ffwd.h"
 
@@ -20,11 +21,12 @@ void metadata(AVFormatContext *format_ctx)
 
 int get_frame(AVCodecContext *codec_ctx, AVFormatContext *fmt_ctx, int video_stream, AVFrame *frame) {
      AVPacket pkt;
-     int got_picture;
+     int got_picture = 0;
 
      while (av_read_frame(fmt_ctx, &pkt) >= 0) {
-          if (pkt.stream_index == video_stream)
+          if (pkt.stream_index == video_stream) {
                avcodec_decode_video2(codec_ctx, frame, &got_picture, &pkt);
+          }
      
           if (got_picture) {
                av_free_packet(&pkt);
@@ -53,14 +55,7 @@ void usage(char *executable) {
      exit(0);
 }
 
-/* callback to draw frame */
-void draw_frame_cb(EV_P_ ev_timer *w, int revents) {
-
-}
-
-
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
      AVFormatContext *format_ctx = NULL;
      int video_stream;
      AVCodecContext *codec_ctx;
@@ -133,6 +128,7 @@ int main(int argc, char *argv[])
      struct SwsContext *sws_ctx = NULL;
      uint8_t *dst[4] = {NULL};
      int dstStride[4] = {0};
+     struct timespec req;
 
      sws_ctx = sws_getCachedContext(sws_ctx,
                                     frame->width, frame->height, frame->format, 
@@ -144,15 +140,17 @@ int main(int argc, char *argv[])
                exit(1);
      }
 
-     dst[0] = ximg->data;
-     dstStride[0] = frame->width * ((32 + 7) / 8);
-     while (get_frame(codec_ctx, format_ctx, video_stream, frame) != 0) {
-          double pts;
+     req.tv_sec = 0;
+     req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* in nanoseconds */
 
+    dst[0] = ximg->data;
+    dstStride[0] = frame->width * ((32 + 7) / 8);
+
+     while (true) {
+          get_frame(codec_ctx, format_ctx, video_stream, frame);
           sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, dst, dstStride);
           if (frame->pts == AV_NOPTS_VALUE)
-               pts = 1/av_q2d(frame->time_base);
-
+                    nanosleep(&req, NULL);
           XPutImage(d, w, gc, ximg, 0, 0, 0, 0, frame->width, frame->height);
           XFlush(d);
      }

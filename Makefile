@@ -1,4 +1,4 @@
-objects = ffwd.o
+objects = ffwd.o 
 libraries = -lavformat -lavcodec -lavutil -lswscale -lz -lbz2 -lX11
 CFLAGS = -g -O0 -Wall -Wextra
 
