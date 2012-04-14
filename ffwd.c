@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <time.h>
 
-#include "ffwd.h"
+#include "vo/vo.h"
 
 void metadata(AVFormatContext *format_ctx)
 {
@@ -38,18 +38,6 @@ int get_frame(AVCodecContext *codec_ctx, AVFormatContext *fmt_ctx, int video_str
      return 0;
 }
 
-XImage *get_ximg(Display *d, Visual *v, int width, int height) {
-     void *unaligned;
-     XImage *ximg;
-
-     ximg = XCreateImage(d, v, 24, ZPixmap, 0, NULL, width, height, 8, 0);
-     unaligned = malloc(ximg->bytes_per_line * height + 32);
-     ximg->data = unaligned + 16 - ((long)unaligned & 15);
-     memset(ximg->data, 0, ximg->bytes_per_line * height);
-
-     return ximg;
-}
-
 void usage(char *executable) {
      printf("usage: %s [file]\n", executable);
      exit(0);
@@ -61,6 +49,7 @@ int main(int argc, char *argv[]) {
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVFrame *frame;
+     struct timespec req;
 
      if (argc != 2)
           usage(argv[0]);
@@ -108,50 +97,16 @@ int main(int argc, char *argv[]) {
           exit(1);
      }
 
-     Display *d;
-     Window w;
-     GC gc;
-     XImage *ximg;
-     XWindowAttributes a;
-
-     if ((d = XOpenDisplay(NULL)) == NULL) {
-          fprintf(stderr, "ERROR: Failed to open display.\n");
-          exit(1);
-     }
-
-     w = XCreateWindow(d, DefaultRootWindow(d), 0, 0, 100, 100, 0, CopyFromParent, InputOutput, CopyFromParent, 0, NULL);
-     XMapWindow(d, w);
-     gc = XCreateGC(d, w, 0, NULL);
-     XGetWindowAttributes(d, w, &a);
-     ximg = get_ximg(d, a.visual, frame->width, frame->height);
-
-     struct SwsContext *sws_ctx = NULL;
-     uint8_t *dst[4] = {NULL};
-     int dstStride[4] = {0};
-     struct timespec req;
-
-     sws_ctx = sws_getCachedContext(sws_ctx,
-                                    frame->width, frame->height, frame->format, 
-                                    frame->width, frame->height, PIX_FMT_RGB32, 
-                                    SWS_BICUBIC, NULL, NULL, 0);
-
-     if (sws_ctx == NULL) {
-               fprintf(stderr, "Failed to allocate SwsContext.\n");
-               exit(1);
-     }
-
      req.tv_sec = 0;
      req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* in nanoseconds */
 
-    dst[0] = ximg->data;
-    dstStride[0] = frame->width * ((32 + 7) / 8);
-
      while (true) {
           get_frame(codec_ctx, format_ctx, video_stream, frame);
-          sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, dst, dstStride);
           if (frame->pts == AV_NOPTS_VALUE)
                     nanosleep(&req, NULL);
-          XPutImage(d, w, gc, ximg, 0, 0, 0, 0, frame->width, frame->height);
-          XFlush(d);
+          if (x11_draw(frame) == -1) {
+               fprintf(stderr, "ERROR: Failed to draw frame.\n");
+               exit(1);
+          }
      }
 }
