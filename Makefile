@@ -7,5 +7,6 @@ analyze :
 	clang --analyze $(libraries) $(objects:%.o=%.c); rm *.plist
 ffwd : $(objects)
 	$(CC) $(CFLAGS) -o ffwd $(objects) $(libraries)
+ffwd.o : vo/vo.h
 clean : 
 	rm ffwd $(objects)
