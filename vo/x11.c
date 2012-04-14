@@ -12,12 +12,10 @@ XImage *ximg;
 bool initialized = false;
 
 XImage *get_ximg(Visual *v, int width, int height) {
-     void *unaligned;
      XImage *ximg;
 
      ximg = XCreateImage(d, v, 24, ZPixmap, 0, NULL, width, height, 8, 0);
-     unaligned = malloc(ximg->bytes_per_line * height + 32);
-     ximg->data = unaligned + 16 - ((long)unaligned & 15);
+     ximg->data = malloc(ximg->bytes_per_line * height);
      memset(ximg->data, 0, ximg->bytes_per_line * height);
 
      return ximg;
@@ -42,8 +40,7 @@ int x11_init(int width, int height) {
 int x11_draw(AVFrame *frame) {
      int err;
      struct SwsContext *sws_ctx = NULL;
-     uint8_t *dst[4] = {NULL};
-     int dstStride[4] = {0};
+     int stride;
 
      if (initialized == false)
           err = x11_init(frame->width, frame->height);
@@ -59,9 +56,8 @@ int x11_draw(AVFrame *frame) {
      if (sws_ctx == NULL)
           return -1;
 
-     dst[0] = ximg->data;
-     dstStride[0] = frame->width * ((32 + 7) / 8);
-     sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, dst, dstStride);
+     stride = frame->width * ((32 + 7) / 8);
+     sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, &ximg->data, &stride);
      XPutImage(d, w, gc, ximg, 0, 0, 0, 0, frame->width, frame->height);
      XFlush(d);
 
