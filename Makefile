@@ -1,5 +1,5 @@
 objects = ffwd.o vo/x11.o
-libraries = -lavformat -lavcodec -lavutil -lswscale -lz -lbz2 -lX11
+libraries = -lavformat -lavcodec -lavutil -lswscale -lz -lbz2 -lX11 -pthread
 CFLAGS = -g -O0 -Wall -Wextra
 
 all : ffwd
