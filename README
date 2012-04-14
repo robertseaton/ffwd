@@ -1,1 +1,16 @@
 ffwd plays video.
+
+supported file formats (tested):
+* mkv
+
+supported video codecs (tested):
+* h264
+
+supported video outputs:
+* x11
+
+supported operating systems (tested):
+* linux
+
+supported architectures (tested):
+* x86_64
