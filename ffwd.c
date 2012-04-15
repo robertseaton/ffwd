@@ -86,7 +86,7 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
           ret = -1;
 
      pthread_mutex_unlock(&q->mutex);
-     return out;
+     return ret;
 }
 
 void metadata(AVFormatContext *format_ctx) {
@@ -151,10 +151,8 @@ void audio_loop(void *_format_ctx) {
           return ;
      }
 
-     if (get_frame(codec_ctx, frame, &audioq) == -1) {
-          fprintf(stderr, "WARNING: Failed to decode audio. No sound.\n");
-          return ;
-     }
+     while (get_frame(codec_ctx, frame, &audioq) == -1) 
+          ;
 
      req.tv_sec = 0;
      req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* miliseconds -> nanoseconds */
@@ -191,10 +189,8 @@ void video_loop(void *_format_ctx) {
           exit(1);
      }
 
-     if (get_frame(codec_ctx, frame, &videoq) == -1) {
-          fprintf(stderr, "ERROR: Failed to decode video.\n");
-          exit(1);
-     }
+     while (get_frame(codec_ctx, frame, &videoq) == -1)
+          ;
 
      req.tv_sec = 0;
      req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* miliseconds -> nanoseconds */
