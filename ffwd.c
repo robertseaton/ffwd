@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <time.h>
 
+#include "ao/ao.h"
 #include "vo/vo.h"
 
 struct pkt_queue {
@@ -158,6 +159,11 @@ void audio_loop(void *_format_ctx) {
      while (get_frame(codec_ctx, frame, &audioq) != -1) {
           assert(frame->pts == AV_NOPTS_VALUE);
           nanosleep(&req, NULL);
+
+          if (alsa_play(frame, codec_ctx->sample_rate, codec_ctx->channels) == -1) {
+               fprintf(stderr, "ERROR: Failed to decode audio.\n");
+               exit(1);
+          }
      }
 }
 
