@@ -11,6 +11,8 @@
 #include <stdbool.h>
 #include <time.h>
 
+#include <sys/timeb.h>
+
 #include "ao/ao.h"
 #include "vo/vo.h"
 
@@ -64,7 +66,8 @@ int push(struct pkt_queue *q, AVPacket *pkt) {
 
 int pop(struct pkt_queue *q, AVPacket *pkt) {
      AVPacketList *pkt1;
-     
+     int ret = 0;
+
      pthread_mutex_lock(&q->mutex);
 
      pkt1 = q->first;
@@ -80,10 +83,10 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
           av_free(pkt1);
                
      } else
-          return -1;
+          ret = -1;
 
      pthread_mutex_unlock(&q->mutex);
-     return 0;
+     return out;
 }
 
 void metadata(AVFormatContext *format_ctx) {
@@ -167,6 +170,13 @@ void audio_loop(void *_format_ctx) {
      }
 }
 
+double miliseconds_since_epoch() {
+      struct timeb zerohour;
+      ftime(&zerohour);
+
+      return (double)zerohour.time * 1000 + zerohour.millitm;
+} 
+
 void video_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
      int stream;
@@ -174,6 +184,7 @@ void video_loop(void *_format_ctx) {
      AVCodec *codec;
      AVFrame *frame;
      struct timespec req;
+     double start, expected, actual;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
           fprintf(stderr, "ERROR: Failed to initialize video codec.");
@@ -188,6 +199,9 @@ void video_loop(void *_format_ctx) {
      req.tv_sec = 0;
      req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* miliseconds -> nanoseconds */
 
+     start = miliseconds_since_epoch();
+
+     int i = 1;
      while (get_frame(codec_ctx, frame, &videoq) != -1) {
           assert(frame->pts == AV_NOPTS_VALUE);
           nanosleep(&req, NULL);
@@ -195,6 +209,10 @@ void video_loop(void *_format_ctx) {
                fprintf(stderr, "ERROR: Failed to draw frame.\n");
                exit(1);
           }
+          actual = miliseconds_since_epoch();
+          expected = 1/av_q2d(codec_ctx->time_base) * i + start;
+          i++;
+          req.tv_nsec = (1/av_q2d(codec_ctx->time_base) - (actual - expected)) * 1000000;
      }
 }
 
