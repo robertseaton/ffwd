@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <pthread.h>
+
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
@@ -9,8 +11,11 @@
 
 /* declared in vo/x11.c */
 extern Display *d;
-extern Window w;
+extern Window window;
 extern bool initialized;
+extern pthread_mutex_t x11mutex;
+extern int height;
+extern int width;
 
 void x11_event_loop() {
      XEvent ev;
@@ -21,14 +26,14 @@ void x11_event_loop() {
      while (initialized == false)
           ;
 
-     XSelectInput(d, w, KeyPressMask);
+     XSelectInput(d, window, KeyPressMask | StructureNotifyMask);
 
      while (true) {
           XNextEvent(d, &ev);
 
-          if (ev.type == KeyPress) {
+          switch (ev.type) {
+          case KeyPress:
                len = XLookupString(&ev.xkey, string, 25, &keysym, NULL);
-
                if (len < 0)
                     break; 
 
@@ -36,6 +41,17 @@ void x11_event_loop() {
                     XCloseDisplay(d);
                     exit(0);
                }
+               break;
+          case ConfigureNotify:
+               if (ev.xconfigure.window == window) {
+                    pthread_mutex_lock(&x11mutex);
+                    height = ev.xconfigure.height;
+                    width = ev.xconfigure.width;
+                    pthread_mutex_unlock(&x11mutex);
+               }
+               break;
+          default:
+               break;
           }
      }
 }
