@@ -24,9 +24,7 @@ XImage *get_ximg(Visual *v, int width, int height) {
 int x11_init(int width, int height) {
      XWindowAttributes a;
 
-     if ((d = XOpenDisplay(NULL)) == NULL)
-          return -1;
-
+     d = XOpenDisplay(NULL);
      w = XCreateWindow(d, DefaultRootWindow(d), 0, 0, 100, 100, 0, CopyFromParent, InputOutput, CopyFromParent, 0, NULL);
      XMapWindow(d, w);
      gc = XCreateGC(d, w, 0, NULL);
