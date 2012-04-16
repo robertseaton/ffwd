@@ -162,7 +162,7 @@ void audio_loop(void *_format_ctx) {
           assert(frame->pts == AV_NOPTS_VALUE);
           nanosleep(&req, NULL);
 
-          if (alsa_play(frame, codec_ctx->sample_rate, codec_ctx->channels) == -1) {
+          if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
                fprintf(stderr, "ERROR: Failed to decode audio.\n");
                exit(1);
           }
