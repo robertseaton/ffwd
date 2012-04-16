@@ -210,6 +210,7 @@ void video_loop(void *_format_ctx) {
                exit(1);
           }
      }
+     exit(0);
 }
 
 void feeder(void *_t) {
