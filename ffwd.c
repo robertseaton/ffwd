@@ -15,6 +15,7 @@
 
 #include "ao/ao.h"
 #include "vo/vo.h"
+#include "kbd/kbd.h"
 
 struct pkt_queue {
      AVPacketList *first, *last;
@@ -264,7 +265,5 @@ int main(int argc, char *argv[]) {
      pthread_create(&video, NULL, video_loop, format_ctx);
      pthread_create(&audio, NULL, audio_loop, format_ctx);
 
-     while (true) {
-
-     }
+     kbd_event_loop(KBD_X11);
 }
