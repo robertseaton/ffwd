@@ -70,7 +70,7 @@ int alsa_initialize(int sample_rate, int channels) {
 }
 
 int alsa_play(AVFrame *frame, int sample_rate, int channels) {
-     int err;
+     int err = 0;
 
      if (!alsa_initialized) 
           err = alsa_initialize(sample_rate, channels);
