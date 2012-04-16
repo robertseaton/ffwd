@@ -204,7 +204,7 @@ void video_loop(void *_format_ctx) {
           req.tv_nsec = (display_at - actual) * 1000000;
 
           nanosleep(&req, NULL);
-          if (x11_draw(frame) == -1) {
+          if (draw(frame, X11) == -1) {
                fprintf(stderr, "ERROR: Failed to draw frame.\n");
                exit(1);
           }

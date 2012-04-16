@@ -1,6 +1,12 @@
 #ifndef VO
 
-int x11_draw(AVFrame *frame);
+#include <libavcodec/avcodec.h>
+
+enum video_output {
+     X11
+}; 
+
+int draw(AVFrame *frame, int vo);
 
 #define VO
 #endif
