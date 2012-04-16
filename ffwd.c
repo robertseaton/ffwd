@@ -18,8 +18,6 @@
 
 struct pkt_queue {
      AVPacketList *first, *last;
-     int npkts;
-     int size;
      pthread_mutex_t mutex;
 } audioq, videoq;
 
@@ -33,8 +31,6 @@ struct trough {
 pthread_mutex_t ffmpeg;
 
 void initq(struct pkt_queue *q) {
-     q->npkts = 0;
-     q->size = 0;
      pthread_mutex_init(&q->mutex, NULL);
 }
 
@@ -56,8 +52,6 @@ int push(struct pkt_queue *q, AVPacket *pkt) {
           q->last->next = pkt1;
 
      q->last = pkt1;
-     q->npkts++;
-     q->size += pkt1->pkt.size;
 
      pthread_mutex_unlock(&q->mutex);
 
@@ -77,8 +71,6 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
           if (!q->first)
                     q->last = NULL;
 
-          q->npkts--;
-          q->size -= pkt1->pkt.size;
           *pkt = pkt1->pkt;
           av_free(pkt1);
                
@@ -99,11 +91,20 @@ void metadata(AVFormatContext *format_ctx) {
 int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
      AVPacket pkt;
      int got_frame = 0;
+     double pts;
 
      while (pop(q, &pkt) != -1) {
-          if (q == &videoq)
+          if (q == &videoq) {
                avcodec_decode_video2(codec_ctx, frame, &got_frame, &pkt);
-          else
+
+               pts = 0;
+               if (pkt.pts != AV_NOPTS_VALUE && frame->opaque && *(uint64_t *)frame->opaque != AV_NOPTS_VALUE)
+                    pts = *(uint64_t *)frame->opaque;
+               else if (pkt.pts != AV_NOPTS_VALUE)
+                    pts = pkt.pts;
+               else
+                    printf("nopts wtf\n");
+          } else
                avcodec_decode_audio4(codec_ctx, frame, &got_frame, &pkt);
 
           if (got_frame) {
@@ -169,10 +170,10 @@ void audio_loop(void *_format_ctx) {
 }
 
 double miliseconds_since_epoch() {
-      struct timeb zerohour;
-      ftime(&zerohour);
+      struct timeb what_time;
+      ftime(&what_time);
 
-      return (double)zerohour.time * 1000 + zerohour.millitm;
+      return (double)what_time.time * 1000 + what_time.millitm;
 } 
 
 void video_loop(void *_format_ctx) {
@@ -182,7 +183,7 @@ void video_loop(void *_format_ctx) {
      AVCodec *codec;
      AVFrame *frame;
      struct timespec req;
-     double start, expected, actual;
+     double start, actual, display_at;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
           fprintf(stderr, "ERROR: Failed to initialize video codec.");
@@ -197,18 +198,16 @@ void video_loop(void *_format_ctx) {
 
      start = miliseconds_since_epoch();
 
-     int i = 1;
      while (get_frame(codec_ctx, frame, &videoq) != -1) {
-          assert(frame->pts == AV_NOPTS_VALUE);
+          actual = miliseconds_since_epoch();
+          display_at = frame->pkt_pts + start;
+          req.tv_nsec = (display_at - actual) * 1000000;
+
           nanosleep(&req, NULL);
           if (x11_draw(frame) == -1) {
                fprintf(stderr, "ERROR: Failed to draw frame.\n");
                exit(1);
           }
-          actual = miliseconds_since_epoch();
-          expected = 1/av_q2d(codec_ctx->time_base) * i + start;
-          i++;
-          req.tv_nsec = (1/av_q2d(codec_ctx->time_base) - (actual - expected)) * 1000000;
      }
 }
 
