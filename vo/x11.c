@@ -36,7 +36,7 @@ int x11_init(int width, int height) {
 }
 
 int x11_draw(AVFrame *frame) {
-     int err;
+     int err = 0;
      struct SwsContext *sws_ctx = NULL;
      int stride;
 
