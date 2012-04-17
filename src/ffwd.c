@@ -20,7 +20,6 @@
 
 struct pkt_queue audioq, videoq;
 
-pthread_mutex_t idk = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 
 /* information for feeder */
