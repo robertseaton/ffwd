@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include <pthread.h>
 
@@ -14,6 +15,7 @@ extern Display *d;
 extern Window window;
 extern bool initialized;
 extern pthread_mutex_t x11mutex;
+extern pthread_cond_t initial;
 extern int height;
 extern int width;
 
@@ -40,8 +42,9 @@ void x11_event_loop() {
      int len;
      KeySym keysym;
 
-     while (initialized == false)
-          ;
+     pthread_mutex_lock(&x11mutex);
+     pthread_cond_wait(&initial, &x11mutex);
+     pthread_mutex_unlock(&x11mutex);
 
      XSelectInput(d, window, KeyPressMask | StructureNotifyMask);
 

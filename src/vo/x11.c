@@ -13,7 +13,9 @@ XImage *ximg;
 bool initialized = false;
 int width; 
 int height;
-pthread_mutex_t x11mutex;
+pthread_mutex_t x11mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t initial = PTHREAD_COND_INITIALIZER;
+
 XWindowAttributes a;
 
 XImage *get_ximg(Visual *v, int width, int height) {
@@ -41,7 +43,7 @@ int x11_init(int w, int h) {
      ximg = get_ximg(a.visual, width, height);
 
      initialized = true;
-     
+     pthread_cond_signal(&initial);
      return 0;
 }
 
