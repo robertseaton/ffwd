@@ -17,8 +17,11 @@
 #include "vo/vo.h"
 #include "kbd/kbd.h"
 
+#define MAX_QUEUED_PACKETS 100
+#define MIN_QUEUED_PACKETS 20
 struct pkt_queue {
      AVPacketList *first, *last;
+     int npkts;
      pthread_mutex_t mutex;
 } audioq, videoq;
 
@@ -32,6 +35,7 @@ struct trough {
 pthread_mutex_t ffmpeg;
 
 void initq(struct pkt_queue *q) {
+     q->npkts = 0;
      pthread_mutex_init(&q->mutex, NULL);
 }
 
@@ -45,6 +49,17 @@ int push(struct pkt_queue *q, AVPacket *pkt) {
      pkt1->pkt = *pkt;
      pkt1->next = NULL;
 
+     if (audioq.npkts > videoq.npkts && videoq.npkts >= MAX_QUEUED_PACKETS)
+          while (videoq.npkts >= MAX_QUEUED_PACKETS && audioq.npkts > MIN_QUEUED_PACKETS) {
+               printf("videoq %d\n", videoq.npkts);
+               printf("audioq %d\n", audioq.npkts);
+          }
+     else if (videoq.npkts > audioq.npkts && audioq.npkts >= MAX_QUEUED_PACKETS)
+          while (audioq.npkts >= MAX_QUEUED_PACKETS && videoq.npkts > MIN_QUEUED_PACKETS) {
+               printf("videoq %d\n", videoq.npkts);
+               printf("audioq %d\n", audioq.npkts);
+          } 
+
      pthread_mutex_lock(&q->mutex);
 
      if (!q->last)
@@ -52,6 +67,7 @@ int push(struct pkt_queue *q, AVPacket *pkt) {
      else
           q->last->next = pkt1;
 
+     q->npkts++;
      q->last = pkt1;
 
      pthread_mutex_unlock(&q->mutex);
@@ -64,7 +80,6 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
      int ret = 0;
 
      pthread_mutex_lock(&q->mutex);
-
      pkt1 = q->first;
      if (pkt1) {
           q->first = pkt1->next;
@@ -74,7 +89,7 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
 
           *pkt = pkt1->pkt;
           av_free(pkt1);
-               
+          q->npkts--;     
      } else
           ret = -1;
 
