@@ -13,17 +13,15 @@
 
 #include <sys/timeb.h>
 
+#include "queue.h"
 #include "ao/ao.h"
 #include "vo/vo.h"
 #include "kbd/kbd.h"
 
-#define MAX_QUEUED_PACKETS 100
+#define MAX_QUEUED_PACKETS 50
 #define MIN_QUEUED_PACKETS 20
-struct pkt_queue {
-     AVPacketList *first, *last;
-     int npkts;
-     pthread_mutex_t mutex;
-} audioq, videoq;
+
+struct pkt_queue audioq, videoq;
 
 /* information for feeder */
 struct trough {
@@ -33,69 +31,6 @@ struct trough {
 };
 
 pthread_mutex_t ffmpeg;
-
-void initq(struct pkt_queue *q) {
-     q->npkts = 0;
-     pthread_mutex_init(&q->mutex, NULL);
-}
-
-int push(struct pkt_queue *q, AVPacket *pkt) {
-     AVPacketList *pkt1;
-
-     if (av_dup_packet(pkt) < 0)
-          return -1;
-
-     pkt1 = malloc(sizeof(AVPacketList));
-     pkt1->pkt = *pkt;
-     pkt1->next = NULL;
-
-     if (audioq.npkts > videoq.npkts && videoq.npkts >= MAX_QUEUED_PACKETS)
-          while (videoq.npkts >= MAX_QUEUED_PACKETS && audioq.npkts > MIN_QUEUED_PACKETS) {
-               printf("videoq %d\n", videoq.npkts);
-               printf("audioq %d\n", audioq.npkts);
-          }
-     else if (videoq.npkts > audioq.npkts && audioq.npkts >= MAX_QUEUED_PACKETS)
-          while (audioq.npkts >= MAX_QUEUED_PACKETS && videoq.npkts > MIN_QUEUED_PACKETS) {
-               printf("videoq %d\n", videoq.npkts);
-               printf("audioq %d\n", audioq.npkts);
-          } 
-
-     pthread_mutex_lock(&q->mutex);
-
-     if (!q->last)
-          q->first = pkt1;
-     else
-          q->last->next = pkt1;
-
-     q->npkts++;
-     q->last = pkt1;
-
-     pthread_mutex_unlock(&q->mutex);
-
-     return 0;
-}
-
-int pop(struct pkt_queue *q, AVPacket *pkt) {
-     AVPacketList *pkt1;
-     int ret = 0;
-
-     pthread_mutex_lock(&q->mutex);
-     pkt1 = q->first;
-     if (pkt1) {
-          q->first = pkt1->next;
-
-          if (!q->first)
-                    q->last = NULL;
-
-          *pkt = pkt1->pkt;
-          av_free(pkt1);
-          q->npkts--;     
-     } else
-          ret = -1;
-
-     pthread_mutex_unlock(&q->mutex);
-     return ret;
-}
 
 void metadata(AVFormatContext *format_ctx) {
      AVDictionaryEntry *tag = NULL;
@@ -129,7 +64,7 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
           }
      }
 
-     return -1;
+     return 0;
 }
 
 int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int *stream, int type) {
@@ -183,6 +118,8 @@ void audio_loop(void *_format_ctx) {
                exit(1);
           }
      }
+
+     printf("audio finished\n");
 }
 
 double miliseconds_since_epoch() {
