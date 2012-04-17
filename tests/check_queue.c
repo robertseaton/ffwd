@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <check.h>
+#include <pthread.h>
 #include "../src/queue.h"
+
+pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 
 START_TEST (test_initq)
 {
@@ -110,20 +113,6 @@ START_TEST (test_multiple_push_pop)
           
 }
 END_TEST
-
-void pusher(struct pkt_queue *q) {
-     AVPacket pkt;
-
-     int i;
-     for (i = 0; i < 100; i++) {
-          
-     }
-}
-
-START_TEST (test_threads_push_pop) 
-{
-     pthread_t feeds;
-}
 
 Suite *queue_suite(void) {
      Suite *s = suite_create("queue");
