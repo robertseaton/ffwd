@@ -14,5 +14,8 @@ void initq(struct pkt_queue *q);
 int push(struct pkt_queue *q, AVPacket *pkt);
 int pop(struct pkt_queue *q, AVPacket *pkt);
 
+#define MAX_QUEUED_PACKETS 100
+#define MIN_QUEUED_PACKETS 50
+
 #define QUEUE
 #endif

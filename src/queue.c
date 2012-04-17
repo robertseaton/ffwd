@@ -3,7 +3,11 @@
 
 #include "queue.h"
 
+extern pthread_cond_t is_full;
+
 void initq(struct pkt_queue *q) {
+     q->first = NULL;
+     q->last = NULL;
      q->npkts = 0;
      pthread_mutex_init(&q->mutex, NULL);
 }
@@ -20,7 +24,7 @@ int push(struct pkt_queue *q, AVPacket *pkt) {
 
      pthread_mutex_lock(&q->mutex);
 
-     if (!q->last)
+     if (q->last == NULL)
           q->first = pkt1;
      else
           q->last->next = pkt1;
@@ -47,7 +51,10 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
 
           *pkt = pkt1->pkt;
           av_free(pkt1);
-          q->npkts--;     
+          q->npkts--;
+
+          if (q->npkts < MIN_QUEUED_PACKETS)
+               pthread_cond_signal(&is_full);
      } else
           ret = -1;
 

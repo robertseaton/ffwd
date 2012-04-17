@@ -18,10 +18,10 @@
 #include "vo/vo.h"
 #include "kbd/kbd.h"
 
-#define MAX_QUEUED_PACKETS 50
-#define MIN_QUEUED_PACKETS 20
-
 struct pkt_queue audioq, videoq;
+
+pthread_mutex_t idk = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 
 /* information for feeder */
 struct trough {
@@ -53,8 +53,6 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
                     pts = *(uint64_t *)frame->opaque;
                else if (pkt.pts != AV_NOPTS_VALUE)
                     pts = pkt.pts;
-               else
-                    printf("nopts wtf\n");
           } else
                avcodec_decode_audio4(codec_ctx, frame, &got_frame, &pkt);
 
@@ -64,7 +62,7 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
           }
      }
 
-     return 0;
+     return -1;
 }
 
 int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int *stream, int type) {
@@ -174,6 +172,15 @@ void feeder(void *_t) {
                push(&videoq, &pkt);
           else if (pkt.stream_index == t->astream)
                push(&audioq, &pkt);
+
+          pthread_mutex_lock(&audioq.mutex);
+          pthread_mutex_lock(&videoq.mutex);
+          if (videoq.npkts > MAX_QUEUED_PACKETS && audioq.npkts > MAX_QUEUED_PACKETS) {
+               pthread_mutex_unlock(&videoq.mutex);
+               pthread_cond_wait(&is_full, &audioq.mutex);
+          } else
+               pthread_mutex_unlock(&videoq.mutex);
+          pthread_mutex_unlock(&audioq.mutex);
      }
                
 }
