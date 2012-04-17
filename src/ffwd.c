@@ -18,10 +18,6 @@
 #include "vo/vo.h"
 #include "kbd/kbd.h"
 
-struct pkt_queue audioq, videoq;
-
-pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
-
 /* information for feeder */
 struct trough {
      int astream;
@@ -29,7 +25,10 @@ struct trough {
      AVFormatContext *fmt_ctx;
 };
 
-pthread_mutex_t ffmpeg;
+struct pkt_queue audioq, videoq;
+
+pthread_mutex_t ffmpeg = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 
 void metadata(AVFormatContext *format_ctx) {
      AVDictionaryEntry *tag = NULL;
@@ -41,18 +40,11 @@ void metadata(AVFormatContext *format_ctx) {
 int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
      AVPacket pkt;
      int got_frame = 0;
-     double pts;
 
      while (pop(q, &pkt) != -1) {
-          if (q == &videoq) {
+          if (q == &videoq) 
                avcodec_decode_video2(codec_ctx, frame, &got_frame, &pkt);
-
-               pts = 0;
-               if (pkt.pts != AV_NOPTS_VALUE && frame->opaque && *(uint64_t *)frame->opaque != AV_NOPTS_VALUE)
-                    pts = *(uint64_t *)frame->opaque;
-               else if (pkt.pts != AV_NOPTS_VALUE)
-                    pts = pkt.pts;
-          } else
+          else
                avcodec_decode_audio4(codec_ctx, frame, &got_frame, &pkt);
 
           if (got_frame) {
@@ -121,6 +113,7 @@ void audio_loop(void *_format_ctx) {
 
 double miliseconds_since_epoch() {
       struct timeb what_time;
+
       ftime(&what_time);
 
       return (double)what_time.time * 1000 + what_time.millitm;
@@ -144,14 +137,12 @@ void video_loop(void *_format_ctx) {
           ;
 
      req.tv_sec = 0;
-     req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* miliseconds -> nanoseconds */
-
      start = miliseconds_since_epoch();
 
      while (get_frame(codec_ctx, frame, &videoq) != -1) {
           actual = miliseconds_since_epoch();
           display_at = frame->pkt_pts + start;
-          req.tv_nsec = (display_at - actual) * 1000000;
+          req.tv_nsec = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
 
           nanosleep(&req, NULL);
           if (draw(frame, X11) == -1) {
@@ -214,7 +205,6 @@ int main(int argc, char *argv[]) {
 
      initq(&audioq);
      initq(&videoq);
-     pthread_mutex_init(&ffmpeg, NULL);
 
      t.vstream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
      t.astream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
