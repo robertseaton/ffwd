@@ -5,10 +5,13 @@ AC_PREREQ([2.68])
 AC_INIT([ffwd], [0.1], [https://github.com/robertseaton/ffwd/issues])
 AC_CONFIG_SRCDIR([src/ffwd.c])
 AM_INIT_AUTOMAKE
+LT_INIT
 AC_CONFIG_HEADERS([config.h])
 
 # Checks for programs.
 AC_PROG_CC
+AM_PROG_CC_C_O
+AM_PATH_CHECK
 
 # Checks for libraries.
 AC_CHECK_LIB([X11], [XSendEvent])
@@ -31,5 +34,5 @@ AC_TYPE_UINT64_T
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([ftime memset strdup])
 
-AC_CONFIG_FILES([Makefile src/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile tests/Makefile])
 AC_OUTPUT
