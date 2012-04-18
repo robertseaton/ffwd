@@ -50,7 +50,7 @@ int alsa_initialize(int sample_rate, int channels) {
      if (snd_pcm_hw_params(pcm_handle, hwparams) < 0)
           return -1;
 
-     if (snd_pcm_hw_params_get_period_size(hwparams, &chunksz, NULL) < 0)
+     if (snd_pcm_hw_params_get_period_size_min(hwparams, &chunksz, NULL) < 0)
           return -1;
 
      /* sw parameters */
@@ -74,7 +74,7 @@ int alsa_initialize(int sample_rate, int channels) {
 
      alsa_initialized = true;
 
-     return 0;
+     return chunksz;
 }
 
 int alsa_play(AVFrame *frame, int sample_rate, int channels) {
@@ -89,5 +89,5 @@ int alsa_play(AVFrame *frame, int sample_rate, int channels) {
      if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / 4) < 0)
           return -1;
 
-     return 0;
+     return err;
 }

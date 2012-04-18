@@ -96,6 +96,10 @@ void audio_loop(void *_format_ctx) {
      AVCodec *codec;
      AVFrame *frame;
      struct timespec req;
+     int start_threshold;
+     int amount_written = 0;
+     double start, actual, play_at, paused_at;
+     double pause_delay = 0;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_AUDIO) == -1) {
           fprintf(stderr, "WARNING: Failed to find or decode audio stream. No sound.\n");
@@ -105,14 +109,37 @@ void audio_loop(void *_format_ctx) {
      while (get_frame(codec_ctx, frame, &audioq) == -1) 
           ;
 
+     start_threshold = play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
+
+     while (amount_written < start_threshold * 1.5) {
+          if (get_frame(codec_ctx, frame, &audioq) == -1) {
+               fprintf(stderr, "ERROR: Failed to retrieve audio frame.\n");
+               exit(1);
+          }
+
+          if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
+               fprintf(stderr, "ERROR: Failed to decode audio.\n");
+               exit(1);
+          }
+
+          amount_written += frame->linesize[0];
+     }
+
      req.tv_sec = 0;
-     req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* miliseconds -> nanoseconds */
+     start = miliseconds_since_epoch() + frame->pkt_pts;
 
      while (get_frame(codec_ctx, frame, &audioq) != -1) {
           pthread_mutex_lock(&pause_mutex);
-          if (paused == true)
+          if (paused == true) {
+               paused_at = miliseconds_since_epoch();
                pthread_cond_wait(&is_paused, &pause_mutex);
+               pause_delay += miliseconds_since_epoch() - paused_at;
+          }
           pthread_mutex_unlock(&pause_mutex);
+
+          actual = miliseconds_since_epoch() - pause_delay;
+          play_at = frame->pkt_pts + start;
+          req.tv_nsec = (play_at - actual) * 1000000; /* miliseconds -> nanoseconds */
 
           nanosleep(&req, NULL);
 
@@ -122,6 +149,7 @@ void audio_loop(void *_format_ctx) {
           }
      }
 
+     printf("audioq %d\n", audioq.npkts);
      printf("audio finished\n");
 }
 
@@ -132,8 +160,7 @@ void video_loop(void *_format_ctx) {
      AVCodec *codec;
      AVFrame *frame;
      struct timespec req;
-     double start, actual, display_at;
-     double paused_at;
+     double start, actual, display_at, paused_at;
      double pause_delay = 0;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
