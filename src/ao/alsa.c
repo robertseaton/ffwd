@@ -6,6 +6,14 @@
 int alsa_initialized = false;
 snd_pcm_t *pcm_handle;
 
+void alsa_pause() {
+     snd_pcm_pause(pcm_handle, 1);
+}
+
+void alsa_unpause() {
+     snd_pcm_pause(pcm_handle, 0);
+}
+
 int alsa_initialize(int sample_rate, int channels) {
      snd_pcm_stream_t stream = SND_PCM_STREAM_PLAYBACK;
      snd_pcm_hw_params_t *hwparams;
@@ -78,7 +86,8 @@ int alsa_play(AVFrame *frame, int sample_rate, int channels) {
      if (err == -1)
           return -1;
 
-     snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / 4);
+     if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / 4) < 0)
+          return -1;
 
      return 0;
 }

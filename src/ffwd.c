@@ -26,9 +26,11 @@ struct trough {
 };
 
 struct pkt_queue audioq, videoq;
-
 pthread_mutex_t ffmpeg = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
+pthread_cond_t is_paused = PTHREAD_COND_INITIALIZER;
+bool paused = false;
 
 void metadata(AVFormatContext *format_ctx) {
      AVDictionaryEntry *tag = NULL;
@@ -79,6 +81,14 @@ int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec 
      return 0;
 }
 
+double miliseconds_since_epoch() {
+      struct timeb what_time;
+
+      ftime(&what_time);
+
+      return (double)what_time.time * 1000 + what_time.millitm;
+} 
+
 void audio_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
      int stream;
@@ -99,7 +109,11 @@ void audio_loop(void *_format_ctx) {
      req.tv_nsec = 1/av_q2d(codec_ctx->time_base) * 1000000; /* miliseconds -> nanoseconds */
 
      while (get_frame(codec_ctx, frame, &audioq) != -1) {
-          assert(frame->pts == AV_NOPTS_VALUE);
+          pthread_mutex_lock(&pause_mutex);
+          if (paused == true)
+               pthread_cond_wait(&is_paused, &pause_mutex);
+          pthread_mutex_unlock(&pause_mutex);
+
           nanosleep(&req, NULL);
 
           if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
@@ -111,14 +125,6 @@ void audio_loop(void *_format_ctx) {
      printf("audio finished\n");
 }
 
-double miliseconds_since_epoch() {
-      struct timeb what_time;
-
-      ftime(&what_time);
-
-      return (double)what_time.time * 1000 + what_time.millitm;
-} 
-
 void video_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
      int stream;
@@ -127,6 +133,8 @@ void video_loop(void *_format_ctx) {
      AVFrame *frame;
      struct timespec req;
      double start, actual, display_at;
+     double paused_at;
+     double pause_delay = 0;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
           fprintf(stderr, "ERROR: Failed to initialize video codec.");
@@ -140,7 +148,15 @@ void video_loop(void *_format_ctx) {
      start = miliseconds_since_epoch();
 
      while (get_frame(codec_ctx, frame, &videoq) != -1) {
-          actual = miliseconds_since_epoch();
+          pthread_mutex_lock(&pause_mutex);
+          if (paused == true) {
+               paused_at = miliseconds_since_epoch();
+               pthread_cond_wait(&is_paused, &pause_mutex);
+               pause_delay += miliseconds_since_epoch() - paused_at;
+          }
+          pthread_mutex_unlock(&pause_mutex);
+
+          actual = miliseconds_since_epoch() - pause_delay;
           display_at = frame->pkt_pts + start;
           req.tv_nsec = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
 

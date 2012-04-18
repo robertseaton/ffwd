@@ -7,6 +7,7 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include "../ao/ao.h"
 
 #include "kbd_defs.h"
 
@@ -15,9 +16,27 @@ extern Display *d;
 extern Window window;
 extern bool initialized;
 extern pthread_mutex_t x11mutex;
+extern pthread_mutex_t pause_mutex;
 extern pthread_cond_t initial;
 extern int height;
 extern int width;
+
+/* declared in ffwd.c */
+extern bool paused;
+extern pthread_cond_t is_paused;
+
+void toggle_paused() {
+     pthread_mutex_lock(&pause_mutex);
+     if (paused == false) {
+          alsa_pause();
+          paused = true;
+     } else {
+          alsa_unpause();
+          paused = false;
+          pthread_cond_broadcast(&is_paused);
+     }
+     pthread_mutex_unlock(&pause_mutex);
+}
 
 void x11_fullscreen() {
      XEvent xev;
@@ -62,6 +81,8 @@ void x11_event_loop() {
                     exit(0);
                } else if (strcmp(string, KBD_FULLSCREEN) == 0) {
                     x11_fullscreen();
+               } else if (strcmp(string, KBD_PAUSE) == 0) {
+                    toggle_paused();
                }
                break;
           case ConfigureNotify:

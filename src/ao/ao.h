@@ -7,6 +7,7 @@ enum audio_output {
 };
 
 int play(AVFrame *frame, int sample_rate, int channels, int ao);
-
+void alsa_pause();
+void alsa_unpause();
 #define AO
 #endif
