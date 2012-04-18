@@ -80,7 +80,8 @@ am_libqueue_la_OBJECTS = queue.lo
 libqueue_la_OBJECTS = $(am_libqueue_la_OBJECTS)
 PROGRAMS = $(bin_PROGRAMS)
 am_ffwd_OBJECTS = ffwd.$(OBJEXT) alsa.$(OBJEXT) ao.$(OBJEXT) \
-	kbd.$(OBJEXT) kbd_x11.$(OBJEXT) vo.$(OBJEXT) x11.$(OBJEXT)
+	kbd.$(OBJEXT) kbd_x11.$(OBJEXT) vo.$(OBJEXT) x11.$(OBJEXT) \
+	util.$(OBJEXT)
 ffwd_OBJECTS = $(am_ffwd_OBJECTS)
 ffwd_DEPENDENCIES = libqueue.la
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
@@ -219,7 +220,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 lib_LTLIBRARIES = libqueue.la
 libqueue_la_SOURCES = queue.c queue.h
-ffwd_SOURCES = ffwd.c ao/alsa.c ao/ao.c kbd/kbd.c kbd/kbd_x11.c vo/vo.c vo/x11.c
+ffwd_SOURCES = ffwd.c ao/alsa.c ao/ao.c kbd/kbd.c kbd/kbd_x11.c vo/vo.c vo/x11.c util.c
 ffwd_LDADD = libqueue.la
 all: all-am
 
@@ -347,6 +348,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kbd.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kbd_x11.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/queue.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/util.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/vo.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/x11.Po@am__quote@
 

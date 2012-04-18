@@ -17,6 +17,7 @@
 #include "ao/ao.h"
 #include "vo/vo.h"
 #include "kbd/kbd.h"
+#include "util.h"
 
 /* information for feeder */
 struct trough {
@@ -80,14 +81,6 @@ int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec 
      *frame = avcodec_alloc_frame();
      return 0;
 }
-
-double miliseconds_since_epoch() {
-      struct timeb what_time;
-
-      ftime(&what_time);
-
-      return (double)what_time.time * 1000 + what_time.millitm;
-} 
 
 void audio_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
