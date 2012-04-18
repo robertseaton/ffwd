@@ -1,6 +1,6 @@
 #ifndef UTIL
 
-double miliiseconds_since_epoch();
+double milliseconds_since_epoch();
 
 #define UTIL
 #endif

@@ -126,7 +126,7 @@ void audio_loop(void *_format_ctx) {
           if (paused == true) {
                paused_at = milliseconds_since_epoch();
                pthread_cond_wait(&is_paused, &pause_mutex);
-               pause_delay += miliseconds_since_epoch() - paused_at;
+               pause_delay += milliseconds_since_epoch() - paused_at;
           }
           pthread_mutex_unlock(&pause_mutex);
 
@@ -172,7 +172,7 @@ void video_loop(void *_format_ctx) {
           if (paused == true) {
                paused_at = milliseconds_since_epoch();
                pthread_cond_wait(&is_paused, &pause_mutex);
-               pause_delay += miliseconds_since_epoch() - paused_at;
+               pause_delay += milliseconds_since_epoch() - paused_at;
           }
           pthread_mutex_unlock(&pause_mutex);
 

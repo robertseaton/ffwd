@@ -7,8 +7,10 @@
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include "../ao/ao.h"
+#include <X11/keysym.h>
 
+#include "../ao/ao.h"
+#include "../util.h"
 #include "kbd_defs.h"
 
 /* declared in vo/x11.c */
@@ -60,30 +62,32 @@ void x11_event_loop() {
      char string[25];
      int len;
      KeySym keysym;
+     double start, how_long;
 
      pthread_mutex_lock(&x11mutex);
      pthread_cond_wait(&initial, &x11mutex);
      pthread_mutex_unlock(&x11mutex);
 
-     XSelectInput(d, window, KeyPressMask | StructureNotifyMask);
+     XSelectInput(d, window, KeyPressMask | KeyReleaseMask | StructureNotifyMask);
 
      while (true) {
           XNextEvent(d, &ev);
 
           switch (ev.type) {
           case KeyPress:
-               len = XLookupString(&ev.xkey, string, 25, &keysym, NULL);
-               if (len < 0)
-                    break; 
+               keysym = (XLookupKeysym(&ev.xkey, 0));
 
-               if (strcmp(string, KBD_QUIT) == 0) {
+               if (keysym == KBD_QUIT) {
                     XCloseDisplay(d);
                     exit(0);
-               } else if (strcmp(string, KBD_FULLSCREEN) == 0) {
+               } else if (keysym == KBD_FULLSCREEN)
                     x11_fullscreen();
-               } else if (strcmp(string, KBD_PAUSE) == 0) {
+               else if (keysym == KBD_PAUSE)
                     toggle_paused();
-               }
+               else if (keysym == KBD_SEEK_FWD || keysym == KBD_SEEK_FWD)
+                    start = milliseconds_since_epoch();
+               else if (keysym == KBD_PAUSE)
+                    toggle_paused();
                break;
           case ConfigureNotify:
                if (ev.xconfigure.window == window) {
