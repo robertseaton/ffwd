@@ -119,18 +119,18 @@ void audio_loop(void *_format_ctx) {
      }
 
      req.tv_sec = 0;
-     start = miliseconds_since_epoch() + frame->pkt_pts;
+     start = milliseconds_since_epoch() + frame->pkt_pts;
 
      while (get_frame(codec_ctx, frame, &audioq) != -1) {
           pthread_mutex_lock(&pause_mutex);
           if (paused == true) {
-               paused_at = miliseconds_since_epoch();
+               paused_at = milliseconds_since_epoch();
                pthread_cond_wait(&is_paused, &pause_mutex);
                pause_delay += miliseconds_since_epoch() - paused_at;
           }
           pthread_mutex_unlock(&pause_mutex);
 
-          actual = miliseconds_since_epoch() - pause_delay;
+          actual = milliseconds_since_epoch() - pause_delay;
           play_at = frame->pkt_pts + start;
           req.tv_nsec = (play_at - actual) * 1000000; /* miliseconds -> nanoseconds */
 
@@ -165,18 +165,18 @@ void video_loop(void *_format_ctx) {
           ;
 
      req.tv_sec = 0;
-     start = miliseconds_since_epoch();
+     start = milliseconds_since_epoch();
 
      while (get_frame(codec_ctx, frame, &videoq) != -1) {
           pthread_mutex_lock(&pause_mutex);
           if (paused == true) {
-               paused_at = miliseconds_since_epoch();
+               paused_at = milliseconds_since_epoch();
                pthread_cond_wait(&is_paused, &pause_mutex);
                pause_delay += miliseconds_since_epoch() - paused_at;
           }
           pthread_mutex_unlock(&pause_mutex);
 
-          actual = miliseconds_since_epoch() - pause_delay;
+          actual = milliseconds_since_epoch() - pause_delay;
           display_at = frame->pkt_pts + start;
           req.tv_nsec = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
 

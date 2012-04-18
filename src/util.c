@@ -1,6 +1,6 @@
 #include <sys/timeb.h>
 
-double miliseconds_since_epoch() {
+double milliseconds_since_epoch() {
       struct timeb what_time;
 
       ftime(&what_time);
