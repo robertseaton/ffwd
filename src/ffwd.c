@@ -34,6 +34,7 @@ pthread_cond_t is_paused = PTHREAD_COND_INITIALIZER;
 bool paused = false;
 double audio_seek_to = 0;
 double video_seek_to = 0;
+double *start;
 AVPacket flush_pkt;
 
 void seek(double milliseconds) {
@@ -94,6 +95,25 @@ int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec 
      return 0;
 }
 
+int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
+     int amount_written = 0;
+     int start_threshold;
+
+     start_threshold = play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
+
+     while (amount_written < start_threshold * 4) {
+          if (get_frame(codec_ctx, frame, &audioq) == -1) 
+               return -1;
+
+          if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, backend) == -1)
+               return -1;
+
+          amount_written += frame->linesize[0];
+     }
+
+     return 0;
+}
+
 void audio_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
      int stream;
@@ -101,10 +121,9 @@ void audio_loop(void *_format_ctx) {
      AVCodec *codec;
      AVFrame *frame;
      struct timespec req;
-     int start_threshold;
-     int amount_written = 0;
-     double start, actual, play_at, paused_at;
+     double actual, play_at, paused_at, audio_start;
      double pause_delay = 0;
+     bool reset = false;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_AUDIO) == -1) {
           fprintf(stderr, "WARNING: Failed to find or decode audio stream. No sound.\n");
@@ -113,25 +132,15 @@ void audio_loop(void *_format_ctx) {
 
      while (get_frame(codec_ctx, frame, &audioq) == -1) 
           ;
-
-     start_threshold = play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
-
-     while (amount_written < start_threshold * 1.5) {
-          if (get_frame(codec_ctx, frame, &audioq) == -1) {
-               fprintf(stderr, "ERROR: Failed to retrieve audio frame.\n");
-               exit(1);
-          }
-
-          if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
-               fprintf(stderr, "ERROR: Failed to decode audio.\n");
-               exit(1);
-          }
-
-          amount_written += frame->linesize[0];
+     
+     if (write_to_threshold(frame, codec_ctx, ALSA) == -1) {
+          fprintf(stderr, "ERROR: Failed to write past audio start threshold.\n");
+          return ;
      }
 
      req.tv_sec = 0;
-     start = milliseconds_since_epoch() + frame->pkt_pts;
+     *start = milliseconds_since_epoch();
+     audio_start = *start + frame->pkt_pts;
 
      while (get_frame(codec_ctx, frame, &audioq) != -1) {
           pthread_mutex_lock(&pause_mutex);
@@ -143,20 +152,36 @@ void audio_loop(void *_format_ctx) {
           pthread_mutex_unlock(&pause_mutex);
 
           actual = milliseconds_since_epoch() - pause_delay;
-          play_at = frame->pkt_pts + start;
+
+          if (reset == true) {
+               int start_frame = frame->pkt_pts;
+               if (write_to_threshold(frame, codec_ctx, ALSA) == -1) {
+                    fprintf(stderr, "ERROR: Failed to write past audio start threshold.\n");
+                    return ;
+               }
+               actual = milliseconds_since_epoch() - pause_delay;
+               *start = actual - start_frame;
+               audio_start = *start;
+               reset = false;
+               continue;
+          }
+
+          play_at = frame->pkt_pts + audio_start;
           req.tv_nsec = (play_at - actual) * 1000000; /* miliseconds -> nanoseconds */
 
           nanosleep(&req, NULL);
 
           if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
                fprintf(stderr, "ERROR: Failed to decode audio.\n");
-               exit(1);
+               return ;
           }
 
           if (audio_seek_to != 0) {
                 flush(&audioq);
                 push(&audioq, &flush_pkt);
+                alsa_flush();
                 audio_seek_to = 0;
+                reset = true;
           }
      }
 
@@ -171,9 +196,9 @@ void video_loop(void *_format_ctx) {
      AVCodec *codec;
      AVFrame *frame;
      struct timespec req;
-     double start, actual, display_at, paused_at;
+     double actual, display_at, paused_at;
      double pause_delay = 0;
-     bool reset;
+     bool reset = false;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
           fprintf(stderr, "ERROR: Failed to initialize video codec.");
@@ -183,8 +208,10 @@ void video_loop(void *_format_ctx) {
      while (get_frame(codec_ctx, frame, &videoq) == -1)
           ;
 
+     while (start == 0)
+          ;
+
      req.tv_sec = 0;
-     start = milliseconds_since_epoch();
 
      while (get_frame(codec_ctx, frame, &videoq) != -1) {
           pthread_mutex_lock(&pause_mutex);
@@ -197,14 +224,12 @@ void video_loop(void *_format_ctx) {
 
           actual = milliseconds_since_epoch() - pause_delay;
 
-          if (reset == true) {
-               start = actual - frame->pkt_pts;
-               reset = false;
-          }
-
-          display_at = frame->pkt_pts + start;
+          display_at = frame->pkt_pts + *start;
           display_at = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
           req.tv_nsec = display_at;
+
+          if (display_at < 0)
+               continue; /* frame drop */
 
           nanosleep(&req, NULL);
           if (draw(frame, X11) == -1) {
@@ -225,7 +250,6 @@ void video_loop(void *_format_ctx) {
                flush(&videoq);
                push(&videoq, &flush_pkt);
                video_seek_to = 0;
-               reset = true;
           }
      }
      exit(0);
@@ -283,6 +307,9 @@ int main(int argc, char *argv[]) {
 
      initq(&audioq);
      initq(&videoq);
+
+     double _start = 0;
+     start = &_start;
 
      t.vstream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
      t.astream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);

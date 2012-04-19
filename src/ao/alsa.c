@@ -14,6 +14,11 @@ void alsa_unpause() {
      snd_pcm_pause(pcm_handle, 0);
 }
 
+void alsa_flush() {
+     snd_pcm_drop(pcm_handle);
+     snd_pcm_prepare(pcm_handle);
+}
+
 int alsa_initialize(int sample_rate, int channels) {
      snd_pcm_stream_t stream = SND_PCM_STREAM_PLAYBACK;
      snd_pcm_hw_params_t *hwparams;
@@ -78,7 +83,7 @@ int alsa_initialize(int sample_rate, int channels) {
 }
 
 int alsa_play(AVFrame *frame, int sample_rate, int channels) {
-     int err = 0;
+     static int err = 0;
 
      if (!alsa_initialized) 
           err = alsa_initialize(sample_rate, channels);
