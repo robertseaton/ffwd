@@ -11,6 +11,7 @@
 
 #include "../ao/ao.h"
 #include "../util.h"
+#include "../ffwd.h"
 #include "kbd_defs.h"
 
 /* declared in vo/x11.c */
@@ -84,8 +85,10 @@ void x11_event_loop() {
                     x11_fullscreen();
                else if (keysym == KBD_PAUSE)
                     toggle_paused();
-               else if (keysym == KBD_SEEK_FWD || keysym == KBD_SEEK_FWD)
-                    start = milliseconds_since_epoch();
+               else if (keysym == KBD_SEEK_FWD)
+                    seek(10);
+               else if (keysym == KBD_SEEK_BWD)
+                    seek(-10);
                else if (keysym == KBD_PAUSE)
                     toggle_paused();
                break;

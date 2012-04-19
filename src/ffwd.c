@@ -32,6 +32,14 @@ pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 pthread_cond_t is_paused = PTHREAD_COND_INITIALIZER;
 bool paused = false;
+double audio_seek_to = 0;
+double video_seek_to = 0;
+AVPacket flush_pkt;
+
+void seek(double milliseconds) {
+     milliseconds *= AV_TIME_BASE;
+     audio_seek_to = video_seek_to = milliseconds;
+}
 
 void metadata(AVFormatContext *format_ctx) {
      AVDictionaryEntry *tag = NULL;
@@ -45,6 +53,12 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
      int got_frame = 0;
 
      while (pop(q, &pkt) != -1) {
+          if (pkt.data == flush_pkt.data) {
+               avcodec_flush_buffers(codec_ctx);
+               while (pop(q, &pkt) == -1)
+                    ;
+          }
+
           if (q == &videoq) 
                avcodec_decode_video2(codec_ctx, frame, &got_frame, &pkt);
           else
@@ -55,8 +69,6 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
                return 0;
           }
      }
-
-     return -1;
 }
 
 int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int *stream, int type) {
@@ -140,6 +152,12 @@ void audio_loop(void *_format_ctx) {
                fprintf(stderr, "ERROR: Failed to decode audio.\n");
                exit(1);
           }
+
+          if (audio_seek_to != 0) {
+                flush(&audioq);
+                push(&audioq, &flush_pkt);
+                audio_seek_to = 0;
+          }
      }
 
      printf("audioq %d\n", audioq.npkts);
@@ -155,6 +173,7 @@ void video_loop(void *_format_ctx) {
      struct timespec req;
      double start, actual, display_at, paused_at;
      double pause_delay = 0;
+     bool reset;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
           fprintf(stderr, "ERROR: Failed to initialize video codec.");
@@ -177,13 +196,36 @@ void video_loop(void *_format_ctx) {
           pthread_mutex_unlock(&pause_mutex);
 
           actual = milliseconds_since_epoch() - pause_delay;
+
+          if (reset == true) {
+               start = actual - frame->pkt_pts;
+               reset = false;
+          }
+
           display_at = frame->pkt_pts + start;
-          req.tv_nsec = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
+          display_at = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
+          req.tv_nsec = display_at;
 
           nanosleep(&req, NULL);
           if (draw(frame, X11) == -1) {
                fprintf(stderr, "ERROR: Failed to draw frame.\n");
                exit(1);
+          }
+
+          if (video_seek_to != 0) {
+               video_seek_to += (frame->pkt_pts * AV_TIME_BASE) / 1000;
+               if (video_seek_to < 0) {
+                    if (av_seek_frame(format_ctx, -1, abs(video_seek_to), AVSEEK_FLAG_BACKWARD) < 0)
+                         fprintf(stderr, "ERROR: Seek failed.\n");
+               } else {
+                    if (av_seek_frame(format_ctx, -1, video_seek_to, 0) < 0)
+                         fprintf(stderr, "ERROR: Seek failed.\n");
+               }
+
+               flush(&videoq);
+               push(&videoq, &flush_pkt);
+               video_seek_to = 0;
+               reset = true;
           }
      }
      exit(0);
@@ -193,7 +235,7 @@ void feeder(void *_t) {
      AVPacket pkt;
      struct trough *t = _t;
 
-     while (av_read_frame(t->fmt_ctx, &pkt) == 0) {
+     while (av_read_frame(t->fmt_ctx, &pkt) == 0) { 
           if (pkt.stream_index == t->vstream)
                push(&videoq, &pkt);
           else if (pkt.stream_index == t->astream)
@@ -245,6 +287,9 @@ int main(int argc, char *argv[]) {
      t.vstream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
      t.astream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
      t.fmt_ctx = format_ctx;
+
+     av_init_packet(&flush_pkt);
+     flush_pkt.data = "FLUSH";
 
      pthread_create(&feedr, NULL, feeder, &t);
      pthread_create(&video, NULL, video_loop, format_ctx);

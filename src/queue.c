@@ -15,7 +15,7 @@ void initq(struct pkt_queue *q) {
 int push(struct pkt_queue *q, AVPacket *pkt) {
      AVPacketList *pkt1;
 
-     if (av_dup_packet(pkt) < 0)
+     if (strcmp(pkt->data, "FLUSH") != 0 && av_dup_packet(pkt) < 0)
           return -1;
 
      pkt1 = malloc(sizeof(AVPacketList));
@@ -60,4 +60,20 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
 
      pthread_mutex_unlock(&q->mutex);
      return ret;
+}
+
+void flush(struct pkt_queue *q) {
+     AVPacketList *pkt, *pkt1;
+
+     pthread_mutex_lock(&q->mutex);
+     for (pkt = q->first; pkt != NULL; pkt = pkt1) {
+          pkt1 = pkt->next;
+          av_free_packet(&pkt->pkt);
+          av_freep(&pkt);
+     }
+
+     q->last = NULL;
+     q->first = NULL;
+     q->npkts = 0;
+     pthread_mutex_unlock(&q->mutex);
 }
