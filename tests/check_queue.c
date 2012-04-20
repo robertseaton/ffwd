@@ -22,6 +22,7 @@ START_TEST (test_first_push)
      
      initq(&q);
      pkt.pts = 1337;
+     pkt.data = "SOMETHING";
      push(&q, &pkt);
 
      fail_unless(q.first->pkt.pts == pkt.pts);
@@ -33,7 +34,7 @@ START_TEST (test_multiple_push)
      struct pkt_queue q;
      AVPacket pkt;
      initq(&q);
-     
+     pkt.data = "SOMETHING";
      int i;
      for (i = 0; i < 100; i++) {
           pkt.pts = i;
@@ -83,7 +84,7 @@ START_TEST (test_push_pop)
      AVPacket pkt, pkt1;
      initq(&q);
      pkt.pts = 1337;
-
+     pkt.data = "SOMETHING";
      push(&q, &pkt);
      pop(&q, &pkt1);
      
@@ -97,7 +98,7 @@ START_TEST (test_multiple_push_pop)
      struct pkt_queue q;
      AVPacket pkt, pkt1;
      initq(&q);
-
+     pkt.data = "SOMETHING";
      int i;
      for (i = 0; i < 100; i++) {
           pkt.pts = i;
