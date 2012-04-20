@@ -6,7 +6,7 @@ enum video_output {
      X11
 }; 
 
-int draw(AVFrame *frame, int vo);
+int draw(AVFrame *frame, enum video_output vo);
 
 #define VO
 #endif

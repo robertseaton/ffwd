@@ -1,9 +1,9 @@
 #include <assert.h>
 
 #include "vo.h"
-#include "draw.h"
+#include "vo_internal.h"
 
-int draw(AVFrame *frame, int vo) {
+int draw(AVFrame *frame, enum video_output vo) {
      switch (vo) {
      case X11:
           if (x11_draw(frame) == -1)
