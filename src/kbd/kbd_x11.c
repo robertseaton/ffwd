@@ -31,10 +31,10 @@ extern pthread_cond_t is_paused;
 void toggle_paused() {
      pthread_mutex_lock(&pause_mutex);
      if (paused == false) {
-          alsa_pause();
+          ao_pause(ALSA);
           paused = true;
      } else {
-          alsa_unpause();
+          ao_unpause(ALSA);
           paused = false;
           pthread_cond_broadcast(&is_paused);
      }

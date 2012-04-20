@@ -1,8 +1,11 @@
-#ifndef PLAY
+#ifndef AO_INTERNAL
 
 #include <libavcodec/avcodec.h>
 
 int alsa_play(AVFrame *frame, int sample_rate, int channels);
+void alsa_flush();
+void alsa_unpause();
+void alsa_pause();
 
-#define PLAY
+#define AO_INTERNAL
 #endif

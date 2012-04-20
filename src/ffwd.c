@@ -41,7 +41,7 @@ AVPacket flush_pkt;
 void seek(double seconds) {
      seconds *= 10;
      seconds *= AV_TIME_BASE;
-     if (milliseconds < 0)
+     if (seconds < 0)
           seek_backward = true;
      else
           seek_backward = false;
@@ -105,13 +105,13 @@ int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
      int amount_written = 0;
      int start_threshold;
 
-     start_threshold = play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
+     start_threshold = ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
 
      while (amount_written < start_threshold * 4) {
           if (get_frame(codec_ctx, frame, &audioq) == -1) 
                return -1;
 
-          if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, backend) == -1)
+          if (ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, backend) == -1)
                return -1;
 
           amount_written += frame->linesize[0];
@@ -178,7 +178,7 @@ void audio_loop(void *_format_ctx) {
 
           nanosleep(&req, NULL);
 
-          if (play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
+          if (ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
                fprintf(stderr, "ERROR: Failed to decode audio.\n");
                return ;
           }
@@ -186,7 +186,7 @@ void audio_loop(void *_format_ctx) {
           if (audio_seek_to != 0) {
                 flush(&audioq);
                 push(&audioq, &flush_pkt);
-                alsa_flush();
+                ao_flush(ALSA);
                 audio_seek_to = 0;
                 reset = true;
           }
