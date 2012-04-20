@@ -32,14 +32,20 @@ pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 pthread_cond_t is_paused = PTHREAD_COND_INITIALIZER;
 bool paused = false;
-double audio_seek_to = 0;
-double video_seek_to = 0;
+double audio_seek_to;
+double video_seek_to;
+bool seek_backward;
 double *start;
 AVPacket flush_pkt;
 
-void seek(double milliseconds) {
-     milliseconds *= AV_TIME_BASE;
-     audio_seek_to = video_seek_to = milliseconds;
+void seek(double seconds) {
+     seconds *= 10;
+     seconds *= AV_TIME_BASE;
+     if (milliseconds < 0)
+          seek_backward = true;
+     else
+          seek_backward = false;
+     audio_seek_to = video_seek_to = seconds;
 }
 
 void metadata(AVFormatContext *format_ctx) {
@@ -155,6 +161,7 @@ void audio_loop(void *_format_ctx) {
 
           if (reset == true) {
                int start_frame = frame->pkt_pts;
+               printf("pkt pts %d\n", frame->pkt_pts);
                if (write_to_threshold(frame, codec_ctx, ALSA) == -1) {
                     fprintf(stderr, "ERROR: Failed to write past audio start threshold.\n");
                     return ;
@@ -239,8 +246,8 @@ void video_loop(void *_format_ctx) {
 
           if (video_seek_to != 0) {
                video_seek_to += (frame->pkt_pts * AV_TIME_BASE) / 1000;
-               if (video_seek_to < 0) {
-                    if (av_seek_frame(format_ctx, -1, abs(video_seek_to), AVSEEK_FLAG_BACKWARD) < 0)
+               if (seek_backward == true) {
+                    if (av_seek_frame(format_ctx, -1, video_seek_to, AVSEEK_FLAG_BACKWARD) < 0)
                          fprintf(stderr, "ERROR: Seek failed.\n");
                } else {
                     if (av_seek_frame(format_ctx, -1, video_seek_to, 0) < 0)
