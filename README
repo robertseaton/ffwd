@@ -17,3 +17,9 @@ supported operating systems:
 
 supported architectures:
 * x86_64
+
+# BUILD INSTRUCTIONS
+
+$ autoreconf --install
+$ ./configure --disable-shared
+$ make 
