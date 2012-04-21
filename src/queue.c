@@ -5,15 +5,23 @@
 
 extern pthread_cond_t is_full;
 
-void initq(struct pkt_queue *q) {
+typedef struct pkt_queue {
+     AVPacketList *first, *last;
+     int npkts;
+     pthread_mutex_t mutex;
+} PacketQueueStruct;
+
+PacketQueue queue_create() {
+     PacketQueueStruct *q = malloc(sizeof(PacketQueueStruct));
      q->first = NULL;
      q->last = NULL;
      q->npkts = 0;
      pthread_mutex_init(&q->mutex, NULL);
 }
 
-int push(struct pkt_queue *q, AVPacket *pkt) {
+int queue_push(PacketQueue _q, AVPacket *pkt) {
      AVPacketList *pkt1;
+     PacketQueueStruct *q = _q;
 
      if (strcmp(pkt->data, "FLUSH") != 0 && av_dup_packet(pkt) < 0)
           return -1;
@@ -37,7 +45,8 @@ int push(struct pkt_queue *q, AVPacket *pkt) {
      return 0;
 }
 
-int pop(struct pkt_queue *q, AVPacket *pkt) {
+int queue_pop(PacketQueue _q, AVPacket *pkt) {
+     PacketQueueStruct *q = _q;
      AVPacketList *pkt1;
      int ret = 0;
 
@@ -62,7 +71,20 @@ int pop(struct pkt_queue *q, AVPacket *pkt) {
      return ret;
 }
 
-void flush(struct pkt_queue *q) {
+int queue_get_size(PacketQueue _q) {
+     PacketQueueStruct *q = _q;
+     
+     return q->npkts;
+}
+
+pthread_mutex_t *queue_get_mutex(PacketQueue _q) {
+     PacketQueueStruct *q = _q;
+     
+     return &q->mutex;
+}
+
+void queue_flush(PacketQueue _q) {
+     PacketQueueStruct *q = _q;
      AVPacketList *pkt, *pkt1;
 
      pthread_mutex_lock(&q->mutex);

@@ -3,16 +3,14 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 
-struct pkt_queue {
-     AVPacketList *first, *last;
-     int npkts;
-     pthread_mutex_t mutex;
-};
+typedef struct PacketQueueStruct *PacketQueue;
 
-void initq(struct pkt_queue *q);
-int push(struct pkt_queue *q, AVPacket *pkt);
-int pop(struct pkt_queue *q, AVPacket *pkt);
-void flush(struct pkt_queue *q);
+PacketQueue queue_create();
+int queue_push(PacketQueue _q, AVPacket *pkt);
+int queue_pop(PacketQueue _q, AVPacket *pkt);
+int queue_get_size(PacketQueue _q);
+pthread_mutex_t *queue_get_mutex(PacketQueue _q);
+void queue_flush(PacketQueue _q);
 
 #define MAX_QUEUED_PACKETS 100
 #define MIN_QUEUED_PACKETS 50
