@@ -23,10 +23,11 @@
 struct trough {
      int astream;
      int vstream;
+     int sstream;
      AVFormatContext *fmt_ctx;
 };
 
-struct pkt_queue audioq, videoq;
+PacketQueue audioq, videoq, subtitleq;
 pthread_mutex_t ffmpeg = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
@@ -34,6 +35,7 @@ pthread_cond_t is_paused = PTHREAD_COND_INITIALIZER;
 bool paused = false;
 double audio_seek_to;
 double video_seek_to;
+double subtitle_seek_to;
 bool seek_backward;
 double *start;
 AVPacket flush_pkt;
@@ -45,7 +47,7 @@ void seek(double seconds) {
           seek_backward = true;
      else
           seek_backward = false;
-     audio_seek_to = video_seek_to = seconds;
+     subtitle_seek_to = audio_seek_to = video_seek_to = seconds;
 }
 
 void metadata(AVFormatContext *format_ctx) {
@@ -55,18 +57,18 @@ void metadata(AVFormatContext *format_ctx) {
           printf("%s: %s\n", tag->key, tag->value);
 }
 
-int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, struct pkt_queue *q) {
+int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, PacketQueue q) {
      AVPacket pkt;
      int got_frame = 0;
 
-     while (pop(q, &pkt) != -1) {
+     while (queue_pop(q, &pkt) != -1) {
           if (pkt.data == flush_pkt.data) {
                avcodec_flush_buffers(codec_ctx);
-               while (pop(q, &pkt) == -1)
+               while (queue_pop(q, &pkt) == -1)
                     ;
           }
 
-          if (q == &videoq) 
+          if (q == videoq) 
                avcodec_decode_video2(codec_ctx, frame, &got_frame, &pkt);
           else
                avcodec_decode_audio4(codec_ctx, frame, &got_frame, &pkt);
@@ -97,7 +99,9 @@ int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec 
           return -1;
      pthread_mutex_unlock(&ffmpeg);
      
-     *frame = avcodec_alloc_frame();
+     if (frame != NULL)
+          *frame = avcodec_alloc_frame();
+
      return 0;
 }
 
@@ -108,7 +112,7 @@ int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
      start_threshold = ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
 
      while (amount_written < start_threshold * 4) {
-          if (get_frame(codec_ctx, frame, &audioq) == -1) 
+          if (get_frame(codec_ctx, frame, audioq) == -1) 
                return -1;
 
           if (ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, backend) == -1)
@@ -118,6 +122,21 @@ int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
      }
 
      return 0;
+}
+
+double wait_if_paused(bool paused) {
+     double pause_delay, paused_at;
+     pause_delay = 0;
+
+     pthread_mutex_lock(&pause_mutex);
+     if (paused == true) {
+          paused_at = milliseconds_since_epoch();
+          pthread_cond_wait(&is_paused, &pause_mutex);
+          pause_delay += milliseconds_since_epoch() - paused_at;
+     }
+     pthread_mutex_unlock(&pause_mutex);
+
+     return pause_delay;
 }
 
 void audio_loop(void *_format_ctx) {
@@ -136,7 +155,7 @@ void audio_loop(void *_format_ctx) {
           return ;
      }
 
-     while (get_frame(codec_ctx, frame, &audioq) == -1) 
+     while (get_frame(codec_ctx, frame, audioq) == -1) 
           ;
      
      if (write_to_threshold(frame, codec_ctx, ALSA) == -1) {
@@ -148,7 +167,10 @@ void audio_loop(void *_format_ctx) {
      *start = milliseconds_since_epoch();
      audio_start = *start + frame->pkt_pts;
 
-     while (get_frame(codec_ctx, frame, &audioq) != -1) {
+     while (get_frame(codec_ctx, frame, audioq) != -1) {
+
+          pause_delay = wait_if_paused(paused);
+
           pthread_mutex_lock(&pause_mutex);
           if (paused == true) {
                paused_at = milliseconds_since_epoch();
@@ -184,16 +206,13 @@ void audio_loop(void *_format_ctx) {
           }
 
           if (audio_seek_to != 0) {
-                flush(&audioq);
-                push(&audioq, &flush_pkt);
+                queue_flush(audioq);
+                queue_push(audioq, &flush_pkt);
                 ao_flush(ALSA);
                 audio_seek_to = 0;
                 reset = true;
           }
      }
-
-     printf("audioq %d\n", audioq.npkts);
-     printf("audio finished\n");
 }
 
 void video_loop(void *_format_ctx) {
@@ -205,14 +224,13 @@ void video_loop(void *_format_ctx) {
      struct timespec req;
      double actual, display_at, paused_at;
      double pause_delay = 0;
-     bool reset = false;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
           fprintf(stderr, "ERROR: Failed to initialize video codec.");
           exit(1);
      }
 
-     while (get_frame(codec_ctx, frame, &videoq) == -1)
+     while (get_frame(codec_ctx, frame, videoq) == -1)
           ;
 
      while (start == 0)
@@ -220,7 +238,7 @@ void video_loop(void *_format_ctx) {
 
      req.tv_sec = 0;
 
-     while (get_frame(codec_ctx, frame, &videoq) != -1) {
+     while (get_frame(codec_ctx, frame, videoq) != -1) {
           pthread_mutex_lock(&pause_mutex);
           if (paused == true) {
                paused_at = milliseconds_since_epoch();
@@ -254,12 +272,74 @@ void video_loop(void *_format_ctx) {
                          fprintf(stderr, "ERROR: Seek failed.\n");
                }
 
-               flush(&videoq);
-               push(&videoq, &flush_pkt);
+               queue_flush(videoq);
+               queue_push(videoq, &flush_pkt);
                video_seek_to = 0;
           }
      }
      exit(0);
+}
+
+int get_subtitle(AVCodecContext *codec_ctx, AVSubtitle *sub) {
+     AVPacket pkt;
+     int got_sub = 0;
+
+     while (true) {
+          if (queue_pop(subtitleq, &pkt) == -1)
+               continue;
+
+          if (pkt.data == flush_pkt.data) {
+               avcodec_flush_buffers(codec_ctx);
+               while (queue_pop(subtitleq, &pkt) == -1)
+                    ;
+          }
+          
+          avcodec_decode_subtitle2(codec_ctx, sub, &got_sub, &pkt);
+
+          if (got_sub) {
+               av_free_packet(&pkt);
+               return 0;
+          }
+     }
+}
+
+void subtitle_loop(void *_format_ctx) {
+     AVFormatContext *format_ctx = _format_ctx;
+     AVCodecContext *codec_ctx;
+     AVCodec *codec;
+     AVSubtitle sub;
+     int stream;
+     struct timespec req;
+     double actual, display_at, paused_at;
+     double pause_delay = 0;
+
+     if (initialize(format_ctx, &codec_ctx, &codec, NULL, &stream, AVMEDIA_TYPE_SUBTITLE) == -1)
+          return ;
+
+     while (get_subtitle(codec_ctx, &sub) != -1) {
+          pthread_mutex_lock(&pause_mutex);
+          if (paused == true) {
+               paused_at = milliseconds_since_epoch();
+               pthread_cond_wait(&is_paused, &pause_mutex);
+               pause_delay += milliseconds_since_epoch() - paused_at;
+          }
+          pthread_mutex_unlock(&pause_mutex);
+
+          actual = milliseconds_since_epoch() - pause_delay;
+
+          display_at = sub.pts + *start;
+          display_at = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
+          req.tv_nsec = display_at;
+
+          nanosleep(&req, NULL);
+
+          // draw_subtitle(sub);
+
+          if (subtitle_seek_to != 0) {
+                queue_flush(subtitleq);
+                queue_push(subtitleq, &flush_pkt);
+          }
+     }
 }
 
 void feeder(void *_t) {
@@ -268,18 +348,16 @@ void feeder(void *_t) {
 
      while (av_read_frame(t->fmt_ctx, &pkt) == 0) { 
           if (pkt.stream_index == t->vstream)
-               push(&videoq, &pkt);
+               queue_push(videoq, &pkt);
           else if (pkt.stream_index == t->astream)
-               push(&audioq, &pkt);
+               queue_push(audioq, &pkt);
+          else if (pkt.stream_index == t->sstream)
+               queue_push(subtitleq, &pkt);
 
-          pthread_mutex_lock(&audioq.mutex);
-          pthread_mutex_lock(&videoq.mutex);
-          if (videoq.npkts > MAX_QUEUED_PACKETS && audioq.npkts > MAX_QUEUED_PACKETS) {
-               pthread_mutex_unlock(&videoq.mutex);
-               pthread_cond_wait(&is_full, &audioq.mutex);
-          } else
-               pthread_mutex_unlock(&videoq.mutex);
-          pthread_mutex_unlock(&audioq.mutex);
+          pthread_mutex_lock(queue_get_mutex(audioq));
+          if (queue_get_size(videoq) > MAX_QUEUED_PACKETS && queue_get_size(audioq) > MAX_QUEUED_PACKETS)
+               pthread_cond_wait(&is_full, queue_get_mutex(audioq));
+          pthread_mutex_unlock(queue_get_mutex(audioq));
      }
                
 }
@@ -291,7 +369,7 @@ void usage(char *executable) {
 
 int main(int argc, char *argv[]) {
      AVFormatContext *format_ctx = NULL;
-     pthread_t feedr, audio, video;
+     pthread_t feedr, audio, video, subtitle;
      struct trough t;
 
      if (argc != 2)
@@ -310,24 +388,33 @@ int main(int argc, char *argv[]) {
      }
 
      av_dump_format(format_ctx, 0, argv[1], false);
-     metadata(format_ctx);
+     // metadata(format_ctx);
 
-     initq(&audioq);
-     initq(&videoq);
+     audioq = queue_create();
+     videoq = queue_create();
+     subtitleq = queue_create();
 
      double _start = 0;
      start = &_start;
 
      t.vstream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
      t.astream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
+     t.sstream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_SUBTITLE, -1, -1, NULL, 0);
      t.fmt_ctx = format_ctx;
 
      av_init_packet(&flush_pkt);
      flush_pkt.data = "FLUSH";
 
      pthread_create(&feedr, NULL, feeder, &t);
-     pthread_create(&video, NULL, video_loop, format_ctx);
-     pthread_create(&audio, NULL, audio_loop, format_ctx);
+
+     if (t.vstream != -1)
+          pthread_create(&video, NULL, video_loop, format_ctx);
+
+     if (t.astream != -1)
+          pthread_create(&audio, NULL, audio_loop, format_ctx);
+
+     if (t.sstream != -1)
+          pthread_create(&subtitle, NULL, subtitle_loop, format_ctx);
 
      kbd_event_loop(KBD_X11);
 }

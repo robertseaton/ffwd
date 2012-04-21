@@ -7,6 +7,7 @@ enum video_output {
 }; 
 
 int draw(AVFrame *frame, enum video_output vo);
+void draw_subtitle(AVSubtitle *sub);
 
 #define VO
 #endif

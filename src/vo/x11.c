@@ -18,6 +18,10 @@ pthread_cond_t initial = PTHREAD_COND_INITIALIZER;
 
 XWindowAttributes a;
 
+void draw_subtitle(AVSubtitle *sub) {
+
+}
+
 XImage *get_ximg(Visual *v, int width, int height) {
      XImage *ximg;
 

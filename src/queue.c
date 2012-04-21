@@ -17,6 +17,8 @@ PacketQueue queue_create() {
      q->last = NULL;
      q->npkts = 0;
      pthread_mutex_init(&q->mutex, NULL);
+
+     return q;
 }
 
 int queue_push(PacketQueue _q, AVPacket *pkt) {
