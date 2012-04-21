@@ -170,15 +170,6 @@ void audio_loop(void *_format_ctx) {
      while (get_frame(codec_ctx, frame, audioq) != -1) {
 
           pause_delay = wait_if_paused(paused);
-
-          pthread_mutex_lock(&pause_mutex);
-          if (paused == true) {
-               paused_at = milliseconds_since_epoch();
-               pthread_cond_wait(&is_paused, &pause_mutex);
-               pause_delay += milliseconds_since_epoch() - paused_at;
-          }
-          pthread_mutex_unlock(&pause_mutex);
-
           actual = milliseconds_since_epoch() - pause_delay;
 
           if (reset == true) {
@@ -239,14 +230,7 @@ void video_loop(void *_format_ctx) {
      req.tv_sec = 0;
 
      while (get_frame(codec_ctx, frame, videoq) != -1) {
-          pthread_mutex_lock(&pause_mutex);
-          if (paused == true) {
-               paused_at = milliseconds_since_epoch();
-               pthread_cond_wait(&is_paused, &pause_mutex);
-               pause_delay += milliseconds_since_epoch() - paused_at;
-          }
-          pthread_mutex_unlock(&pause_mutex);
-
+          pause_delay = wait_if_paused(paused);
           actual = milliseconds_since_epoch() - pause_delay;
 
           display_at = frame->pkt_pts + *start;
@@ -317,14 +301,7 @@ void subtitle_loop(void *_format_ctx) {
           return ;
 
      while (get_subtitle(codec_ctx, &sub) != -1) {
-          pthread_mutex_lock(&pause_mutex);
-          if (paused == true) {
-               paused_at = milliseconds_since_epoch();
-               pthread_cond_wait(&is_paused, &pause_mutex);
-               pause_delay += milliseconds_since_epoch() - paused_at;
-          }
-          pthread_mutex_unlock(&pause_mutex);
-
+          pause_delay = wait_if_paused(paused);
           actual = milliseconds_since_epoch() - pause_delay;
 
           display_at = sub.pts + *start;
@@ -388,7 +365,7 @@ int main(int argc, char *argv[]) {
      }
 
      av_dump_format(format_ctx, 0, argv[1], false);
-     // metadata(format_ctx);
+     metadata(format_ctx);
 
      audioq = queue_create();
      videoq = queue_create();
