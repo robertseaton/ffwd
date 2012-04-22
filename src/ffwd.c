@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <getopt.h>
 #include <time.h>
+#include <err.h>
 
 #include <sys/timeb.h>
 
@@ -179,17 +180,16 @@ void audio_loop(void *_format_ctx) {
      bool reset = false;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_AUDIO) == -1) {
-          fprintf(stderr, "WARNING: Failed to find or decode audio stream. No sound.\n");
+          warnx("Failed to find or decode audio stream. No sound.\n");
           return ;
      }
 
      while (get_frame(codec_ctx, frame, audioq) == -1) 
           ;
      
-     if (write_to_threshold(frame, codec_ctx, ALSA) == -1) {
-          fprintf(stderr, "ERROR: Failed to write past audio start threshold.\n");
-          return ;
-     }
+     if (write_to_threshold(frame, codec_ctx, ALSA) == -1) 
+          errx(1, "Failed to write past audio start threshold.\n");
+
 
      *start = milliseconds_since_epoch();
      audio_start = *start + frame->pkt_pts;
@@ -201,11 +201,8 @@ void audio_loop(void *_format_ctx) {
 
           if (reset == true) {
                int start_frame = frame->pkt_pts;
-               printf("pkt pts %d\n", frame->pkt_pts);
-               if (write_to_threshold(frame, codec_ctx, ALSA) == -1) {
-                    fprintf(stderr, "ERROR: Failed to write past audio start threshold.\n");
-                    return ;
-               }
+               if (write_to_threshold(frame, codec_ctx, ALSA) == -1)
+                    errx(1, "Failed to write past audio start threshold.");
                actual = milliseconds_since_epoch() - pause_delay;
                *start = actual - start_frame;
                audio_start = *start;
@@ -215,10 +212,8 @@ void audio_loop(void *_format_ctx) {
 
           sleep_until_pts(audio_start, frame->pkt_pts, pause_delay);
 
-          if (ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, ALSA) == -1) {
-               fprintf(stderr, "ERROR: Failed to decode audio.\n");
-               return ;
-          }
+          if (ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, ALSA) == -1)
+               errx(1, "Failed to decode audio.\n");
 
           if (audio_seek_to != 0) {
                 queue_flush(audioq);
@@ -240,10 +235,8 @@ void video_loop(void *_format_ctx) {
      double actual, display_at, paused_at;
      double pause_delay = 0;
 
-     if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1) {
-          fprintf(stderr, "ERROR: Failed to initialize video codec.");
-          exit(1);
-     }
+     if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1)
+          errx(1, "Failed to initialize video codec.");
 
      while (get_frame(codec_ctx, frame, videoq) == -1)
           ;
@@ -255,19 +248,17 @@ void video_loop(void *_format_ctx) {
           pause_delay = wait_if_paused(paused);
           sleep_until_pts(*start, frame->pkt_pts, pause_delay);
           
-          if (draw(frame, X11) == -1) {
-               fprintf(stderr, "ERROR: Failed to draw frame.\n");
-               exit(1);
-          }
+          if (draw(frame, X11) == -1)
+               errx(1, "Failed to draw frame.\n");
 
           if (video_seek_to != 0) {
                video_seek_to += (frame->pkt_pts * AV_TIME_BASE) / 1000;
                if (seek_backward == true) {
                     if (av_seek_frame(format_ctx, -1, video_seek_to, AVSEEK_FLAG_BACKWARD) < 0)
-                         fprintf(stderr, "ERROR: Seek failed.\n");
+                         warnx("Seek failed.\n");
                } else {
                     if (av_seek_frame(format_ctx, -1, video_seek_to, 0) < 0)
-                         fprintf(stderr, "ERROR: Seek failed.\n");
+                         warnx("Seek failed.\n");
                }
 
                queue_flush(videoq);
@@ -339,6 +330,7 @@ void feeder(void *_t) {
 
 void usage(char *executable) {
      printf("usage: %s [file]\n", executable);
+     printf("\t-c, --channels n\t Force number of channels.\n");
      exit(0);
 }
 
@@ -356,9 +348,6 @@ int main(int argc, char *argv[]) {
                break;
 
           switch (c) {
-          case 0:
-               printf("%s\n", optarg);
-               break;
           case 'c':
                channels = atoi(optarg);
                break;
@@ -372,15 +361,11 @@ int main(int argc, char *argv[]) {
 
      av_register_all();
      
-     if (avformat_open_input(&format_ctx, argv[optind], NULL, NULL) != 0) {
-          fprintf(stderr, "ERROR: Failed to open file %s.\n", argv[optind]);
-          exit(1);
-     }
+     if (avformat_open_input(&format_ctx, argv[optind], NULL, NULL) != 0)
+          errx(1, "Failed to open file %s.", argv[optind]);
 
-     if (avformat_find_stream_info(format_ctx, NULL) < 0) {
-          fprintf(stderr, "ERROR: Couldn't find stream information.\n");
-          exit(1);
-     }
+     if (avformat_find_stream_info(format_ctx, NULL) < 0)
+          errx(1, "Couldn't find stream information.");
 
      av_dump_format(format_ctx, 0, argv[1], false);
      metadata(format_ctx);
