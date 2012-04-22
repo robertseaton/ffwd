@@ -85,7 +85,7 @@ int alsa_initialize(int sample_rate, int *supported_sample_rate, int channels, i
      return chunksz;
 }
 
-int alsa_play(AVFrame *frame, int sample_rate, int channels) {
+int alsa_play(AVFrame *frame, int sample_rate, int channels, int src_channels) {
      static int err = 0;
 
      static int supported_channels;
@@ -93,13 +93,24 @@ int alsa_play(AVFrame *frame, int sample_rate, int channels) {
      if (!alsa_initialized) 
           err = alsa_initialize(sample_rate, &supported_sample_rate, channels, &supported_channels);
          
+     int sz = frame->linesize[0];
+     uint8_t *data = frame->data[0];
+     bool needs_free = false;
+
+     /* if (supported_channels != src_channels || supported_sample_rate != sample_rate) {
+          needs_free = true;
+          data = ao_convert(frame, &sz, supported_sample_rate, supported_channels);
+          } */
+
      if (err == -1)
           return -1;
 
      int bytes_per_frame = 2 * supported_channels;
-     if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / bytes_per_frame) < 0)
+     if (snd_pcm_writei(pcm_handle, data, sz / bytes_per_frame) < 0)
           return -1;
 
+     if (needs_free)
+          free(data);
 
-     return err * (bytes_per_frame * 2); // double prevents underrun
+     return err * (bytes_per_frame * 2); /* 2x prevents underrun */
 }

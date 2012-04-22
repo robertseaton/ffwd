@@ -33,12 +33,12 @@ void ao_flush(enum audio_output ao) {
      }
 }
 
-int ao_play(AVFrame *frame, int sample_rate, int channels, enum audio_output ao) {
+int ao_play(AVFrame *frame, int sample_rate, int channels, int src_channels, enum audio_output ao) {
      int ret = 0;
 
      switch (ao) {
      case ALSA:
-          ret = alsa_play(frame, sample_rate, channels);
+          ret = alsa_play(frame, sample_rate, channels, src_channels);
           break;
      default:
           assert(1 == 0);
@@ -46,3 +46,4 @@ int ao_play(AVFrame *frame, int sample_rate, int channels, enum audio_output ao)
 
      return ret;
 }
+
