@@ -40,6 +40,13 @@ bool seek_backward;
 double *start;
 AVPacket flush_pkt;
 
+int channels = 0;
+
+static struct option options[] = {
+     {"channels", required_argument, 0, 'c'},
+     {0, 0, 0, 0}
+};
+
 void seek(double seconds) {
      seconds *= 10;
      seconds *= AV_TIME_BASE;
@@ -111,13 +118,16 @@ int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
      int amount_written = 0;
      int start_threshold;
 
-     start_threshold = ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
+     if (channels == 0)
+          channels = codec_ctx->channels;
+
+     start_threshold = ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, backend);
 
      while (amount_written < start_threshold) {
           if (get_frame(codec_ctx, frame, audioq) == -1) 
                return -1;
 
-          if (ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, backend) == -1)
+          if (ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, backend) == -1)
                return -1;
 
           amount_written += frame->linesize[0];
@@ -141,13 +151,29 @@ double wait_if_paused(bool paused) {
      return pause_delay;
 }
 
+double milliseconds_to_nanoseconds(double milliseconds) {
+     return milliseconds * 1000000;
+}
+
+void sleep_until_pts(double start, double pts, double pause_delay) {
+     double actual, play_at, sleep_for;
+     struct timespec t;
+
+     actual = milliseconds_since_epoch() - pause_delay;
+     play_at = pts + start;
+     sleep_for = play_at - actual;
+
+     t.tv_sec = 0;
+     t.tv_nsec = milliseconds_to_nanoseconds(sleep_for);
+     nanosleep(&t, NULL);
+}
+
 void audio_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
      int stream;
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVFrame *frame;
-     struct timespec req;
      double actual, play_at, paused_at, audio_start;
      double pause_delay = 0;
      bool reset = false;
@@ -165,7 +191,6 @@ void audio_loop(void *_format_ctx) {
           return ;
      }
 
-     req.tv_sec = 0;
      *start = milliseconds_since_epoch();
      audio_start = *start + frame->pkt_pts;
 
@@ -188,12 +213,9 @@ void audio_loop(void *_format_ctx) {
                continue;
           }
 
-          play_at = frame->pkt_pts + audio_start;
-          req.tv_nsec = (play_at - actual) * 1000000; /* miliseconds -> nanoseconds */
+          sleep_until_pts(audio_start, frame->pkt_pts, pause_delay);
 
-          nanosleep(&req, NULL);
-
-          if (ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA) == -1) {
+          if (ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, ALSA) == -1) {
                fprintf(stderr, "ERROR: Failed to decode audio.\n");
                return ;
           }
@@ -229,20 +251,10 @@ void video_loop(void *_format_ctx) {
      while (start == 0)
           ;
 
-     req.tv_sec = 0;
-
      while (get_frame(codec_ctx, frame, videoq) != -1) {
           pause_delay = wait_if_paused(paused);
-          actual = milliseconds_since_epoch() - pause_delay;
-
-          display_at = frame->pkt_pts + *start;
-          display_at = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
-          req.tv_nsec = display_at;
-
-          if (display_at < 0)
-               continue; /* frame drop */
-
-          nanosleep(&req, NULL);
+          sleep_until_pts(*start, frame->pkt_pts, pause_delay);
+          
           if (draw(frame, X11) == -1) {
                fprintf(stderr, "ERROR: Failed to draw frame.\n");
                exit(1);
@@ -290,7 +302,6 @@ void subtitle_loop(void *_format_ctx) {
      AVCodec *codec;
      AVSubtitle sub;
      int stream;
-     struct timespec req;
      double actual, display_at, paused_at;
      double pause_delay = 0;
 
@@ -299,12 +310,6 @@ void subtitle_loop(void *_format_ctx) {
 
      while (get_subtitle(codec_ctx) != -1) {
           pause_delay = wait_if_paused(paused);
-          actual = milliseconds_since_epoch() - pause_delay;
-
-          display_at = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
-          req.tv_nsec = display_at;
-
-          nanosleep(&req, NULL);
 
           // draw_subtitle(sub);
 
@@ -341,14 +346,34 @@ int main(int argc, char *argv[]) {
      AVFormatContext *format_ctx = NULL;
      pthread_t feedr, audio, video, subtitle;
      struct trough t;
+     int c;
+     int option_index = 0;
 
-     if (argc != 2)
+     while (true) {
+          c = getopt_long(argc, argv, "c:", options, &option_index);
+
+          if (c == -1)
+               break;
+
+          switch (c) {
+          case 0:
+               printf("%s\n", optarg);
+               break;
+          case 'c':
+               channels = atoi(optarg);
+               break;
+          default:
+               usage(argv[0]);
+          }
+     }
+
+     if (argc == optind)
           usage(argv[0]);
-     
+
      av_register_all();
      
-     if (avformat_open_input(&format_ctx, argv[1], NULL, NULL) != 0) {
-          fprintf(stderr, "ERROR: Failed to open file %s.\n", argv[1]);
+     if (avformat_open_input(&format_ctx, argv[optind], NULL, NULL) != 0) {
+          fprintf(stderr, "ERROR: Failed to open file %s.\n", argv[optind]);
           exit(1);
      }
 
@@ -383,8 +408,8 @@ int main(int argc, char *argv[]) {
      if (t.astream != -1)
           pthread_create(&audio, NULL, audio_loop, format_ctx);
 
-     if (t.sstream != -1)
-          pthread_create(&subtitle, NULL, subtitle_loop, format_ctx);
+     // if (t.sstream != -1)
+     // pthread_create(&subtitle, NULL, subtitle_loop, format_ctx);
 
      kbd_event_loop(KBD_X11);
 }
