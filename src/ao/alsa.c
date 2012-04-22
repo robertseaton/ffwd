@@ -19,7 +19,7 @@ void alsa_flush() {
      snd_pcm_prepare(pcm_handle);
 }
 
-int alsa_initialize(int sample_rate, int channels) {
+int alsa_initialize(int sample_rate, int *supported_sample_rate, int channels, int *supported_channels) {
      snd_pcm_stream_t stream = SND_PCM_STREAM_PLAYBACK;
      snd_pcm_hw_params_t *hwparams;
      snd_pcm_sw_params_t *swparams;
@@ -43,11 +43,14 @@ int alsa_initialize(int sample_rate, int channels) {
      if (snd_pcm_hw_params_set_format(pcm_handle, hwparams, SND_PCM_FORMAT_S16_LE) < 0)
           return -1;
 
-     if (snd_pcm_hw_params_set_rate_near(pcm_handle, hwparams, &sample_rate, 0) < 0)
+     if ((*supported_sample_rate = snd_pcm_hw_params_set_rate_near(pcm_handle, hwparams, &sample_rate, 0)) < 0)
           return -1;
 
-     if (snd_pcm_hw_params_set_channels(pcm_handle, hwparams, channels) < 0)
+     if (snd_pcm_hw_params_set_channels_near(pcm_handle, hwparams, &channels) < 0)
           return -1;
+
+     snd_pcm_hw_params_get_channels(hwparams, supported_channels);
+     snd_pcm_hw_params_get_rate(hwparams, supported_sample_rate, 0);
 
      if (snd_pcm_hw_params_set_periods_near(pcm_handle, hwparams, &periods, 0) < 0)
           return -1;
@@ -85,14 +88,18 @@ int alsa_initialize(int sample_rate, int channels) {
 int alsa_play(AVFrame *frame, int sample_rate, int channels) {
      static int err = 0;
 
+     static int supported_channels;
+     static int supported_sample_rate;
      if (!alsa_initialized) 
-          err = alsa_initialize(sample_rate, channels);
+          err = alsa_initialize(sample_rate, &supported_sample_rate, channels, &supported_channels);
          
      if (err == -1)
           return -1;
 
-     if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / 4) < 0)
+     int bytes_per_frame = 2 * supported_channels;
+     if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / bytes_per_frame) < 0)
           return -1;
 
-     return err;
+
+     return err * (bytes_per_frame * 2); // double prevents underrun
 }
