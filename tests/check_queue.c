@@ -3,8 +3,6 @@
 #include <pthread.h>
 #include "../src/queue.h"
 
-pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
-
 START_TEST (test_push_pop)
 {
      PacketQueue q;

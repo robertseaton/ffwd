@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <getopt.h>
 #include <time.h>
 
 #include <sys/timeb.h>
@@ -30,7 +31,6 @@ struct trough {
 PacketQueue audioq, videoq, subtitleq;
 pthread_mutex_t ffmpeg = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t pause_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 pthread_cond_t is_paused = PTHREAD_COND_INITIALIZER;
 bool paused = false;
 double audio_seek_to;
@@ -86,19 +86,21 @@ int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec 
           return -1;
 
      *codec_ctx = format_ctx->streams[*stream]->codec;
-     *codec = avcodec_find_decoder((*codec_ctx)->codec_id);
+     if (codec != NULL) {
+          *codec = avcodec_find_decoder((*codec_ctx)->codec_id);
 
-     if (*codec == NULL)
-          return -1;
+          if (*codec == NULL)
+               return -1;
 
-     if ((*codec)->capabilities & CODEC_CAP_TRUNCATED)
-          (*codec_ctx)->flags |= CODEC_FLAG_TRUNCATED;
+          if ((*codec)->capabilities & CODEC_CAP_TRUNCATED)
+               (*codec_ctx)->flags |= CODEC_FLAG_TRUNCATED;
 
-     pthread_mutex_lock(&ffmpeg);
-     if (avcodec_open2(*codec_ctx, *codec, NULL) < 0)
-          return -1;
-     pthread_mutex_unlock(&ffmpeg);
-     
+          pthread_mutex_lock(&ffmpeg);
+          if (avcodec_open2(*codec_ctx, *codec, NULL) < 0)
+               return -1;
+          pthread_mutex_unlock(&ffmpeg);
+     }
+
      if (frame != NULL)
           *frame = avcodec_alloc_frame();
 
@@ -111,7 +113,7 @@ int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
 
      start_threshold = ao_play(frame, codec_ctx->sample_rate, codec_ctx->channels, ALSA);
 
-     while (amount_written < start_threshold * 4) {
+     while (amount_written < start_threshold) {
           if (get_frame(codec_ctx, frame, audioq) == -1) 
                return -1;
 
@@ -264,7 +266,7 @@ void video_loop(void *_format_ctx) {
      exit(0);
 }
 
-int get_subtitle(AVCodecContext *codec_ctx, AVSubtitle *sub) {
+int get_subtitle(AVCodecContext *codec_ctx) {
      AVPacket pkt;
      int got_sub = 0;
 
@@ -278,12 +280,7 @@ int get_subtitle(AVCodecContext *codec_ctx, AVSubtitle *sub) {
                     ;
           }
           
-          avcodec_decode_subtitle2(codec_ctx, sub, &got_sub, &pkt);
-
-          if (got_sub) {
-               av_free_packet(&pkt);
-               return 0;
-          }
+          return 0;
      }
 }
 
@@ -297,14 +294,13 @@ void subtitle_loop(void *_format_ctx) {
      double actual, display_at, paused_at;
      double pause_delay = 0;
 
-     if (initialize(format_ctx, &codec_ctx, &codec, NULL, &stream, AVMEDIA_TYPE_SUBTITLE) == -1)
+     if (initialize(format_ctx, &codec_ctx, NULL, NULL, &stream, AVMEDIA_TYPE_SUBTITLE) == -1)
           return ;
 
-     while (get_subtitle(codec_ctx, &sub) != -1) {
+     while (get_subtitle(codec_ctx) != -1) {
           pause_delay = wait_if_paused(paused);
           actual = milliseconds_since_epoch() - pause_delay;
 
-          display_at = sub.pts + *start;
           display_at = (display_at - actual) * 1000000; /* miliseconds -> nanoseconds */
           req.tv_nsec = display_at;
 
@@ -331,10 +327,7 @@ void feeder(void *_t) {
           else if (pkt.stream_index == t->sstream)
                queue_push(subtitleq, &pkt);
 
-          pthread_mutex_lock(queue_get_mutex(audioq));
-          if (queue_get_size(videoq) > MAX_QUEUED_PACKETS && queue_get_size(audioq) > MAX_QUEUED_PACKETS)
-               pthread_cond_wait(&is_full, queue_get_mutex(audioq));
-          pthread_mutex_unlock(queue_get_mutex(audioq));
+          queue_block_until_needed(audioq, videoq);
      }
                
 }

@@ -3,16 +3,21 @@
 
 #include "queue.h"
 
-extern pthread_cond_t is_full;
+#define MAX_QUEUED_PACKETS 100
+#define MIN_QUEUED_PACKETS 50
 
-typedef struct pkt_queue {
+pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
+
+typedef struct __PacketQueue {
      AVPacketList *first, *last;
      int npkts;
      pthread_mutex_t mutex;
-} PacketQueueStruct;
+} _PacketQueue;
 
 PacketQueue queue_create() {
-     PacketQueueStruct *q = malloc(sizeof(PacketQueueStruct));
+     _PacketQueue *q;
+     
+     q = malloc(sizeof(_PacketQueue));
      q->first = NULL;
      q->last = NULL;
      q->npkts = 0;
@@ -22,8 +27,8 @@ PacketQueue queue_create() {
 }
 
 int queue_push(PacketQueue _q, AVPacket *pkt) {
+     _PacketQueue *q = _q;
      AVPacketList *pkt1;
-     PacketQueueStruct *q = _q;
 
      if (strcmp(pkt->data, "FLUSH") != 0 && av_dup_packet(pkt) < 0)
           return -1;
@@ -48,7 +53,7 @@ int queue_push(PacketQueue _q, AVPacket *pkt) {
 }
 
 int queue_pop(PacketQueue _q, AVPacket *pkt) {
-     PacketQueueStruct *q = _q;
+     _PacketQueue *q = _q;
      AVPacketList *pkt1;
      int ret = 0;
 
@@ -74,19 +79,19 @@ int queue_pop(PacketQueue _q, AVPacket *pkt) {
 }
 
 int queue_get_size(PacketQueue _q) {
-     PacketQueueStruct *q = _q;
+     _PacketQueue *q = _q;
      
      return q->npkts;
 }
 
 pthread_mutex_t *queue_get_mutex(PacketQueue _q) {
-     PacketQueueStruct *q = _q;
+     _PacketQueue *q = _q;
      
      return &q->mutex;
 }
 
 void queue_flush(PacketQueue _q) {
-     PacketQueueStruct *q = _q;
+     _PacketQueue *q = _q;
      AVPacketList *pkt, *pkt1;
 
      pthread_mutex_lock(&q->mutex);
@@ -100,4 +105,14 @@ void queue_flush(PacketQueue _q) {
      q->first = NULL;
      q->npkts = 0;
      pthread_mutex_unlock(&q->mutex);
+}
+
+void queue_block_until_needed(PacketQueue audioq, PacketQueue videoq) {
+     pthread_mutex_t *audioq_mutex;
+
+     audioq_mutex = queue_get_mutex(audioq);
+     pthread_mutex_lock(audioq_mutex);
+     if (queue_get_size(audioq) > MAX_QUEUED_PACKETS && queue_get_size(videoq) > MAX_QUEUED_PACKETS)
+          pthread_cond_wait(&is_full, audioq_mutex);
+     pthread_mutex_unlock(audioq_mutex);
 }
