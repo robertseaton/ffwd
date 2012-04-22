@@ -5,128 +5,84 @@
 
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 
-START_TEST (test_initq)
-{
-     struct pkt_queue q;
-     initq(&q);
-
-     fail_unless(q.npkts == 0, NULL);
-     fail_unless(&q.mutex != NULL, NULL);
-}
-END_TEST
-
-START_TEST (test_first_push)
-{
-     struct pkt_queue q;
-     AVPacket pkt;
-     
-     initq(&q);
-     pkt.pts = 1337;
-     pkt.data = "SOMETHING";
-     push(&q, &pkt);
-
-     fail_unless(q.first->pkt.pts == pkt.pts);
-}
-END_TEST
-
-START_TEST (test_multiple_push)
-{
-     struct pkt_queue q;
-     AVPacket pkt;
-     initq(&q);
-     pkt.data = "SOMETHING";
-     int i;
-     for (i = 0; i < 100; i++) {
-          pkt.pts = i;
-          push(&q, &pkt);
-     }
-
-     for (i = 0; i < 100; i++) {
-          fail_unless(q.first->pkt.pts == i, NULL);
-          q.first = q.first->next;
-     }
-}
-END_TEST
-
-START_TEST (test_single_pop)
-{
-     struct pkt_queue q;
-     AVPacket pkt;
-     initq(&q);
-
-     fail_unless(pop(&q, &pkt) == -1, NULL);
-}
-END_TEST
-
-void empty_or_fail(struct pkt_queue *q) {
-     fail_unless(q->npkts == 0, NULL);
-     fail_unless(q->first == NULL, NULL);
-     fail_unless(q->last == NULL, NULL);
-}
-
-START_TEST (test_multiple_pop)
-{
-     struct pkt_queue q;
-     AVPacket pkt;
-     initq(&q);
-
-     int i;
-     for (i = 0; i < 100; i++)
-          fail_unless(pop(&q, &pkt) == -1, NULL);
-
-     empty_or_fail(&q);
-}
-END_TEST
-
 START_TEST (test_push_pop)
 {
-     struct pkt_queue q;
+     PacketQueue q;
      AVPacket pkt, pkt1;
-     initq(&q);
+     q = queue_create();
+
      pkt.pts = 1337;
      pkt.data = "SOMETHING";
-     push(&q, &pkt);
-     pop(&q, &pkt1);
+
+     queue_push(q, &pkt);
+     queue_pop(q, &pkt1);
      
      fail_unless(pkt1.pts == 1337, NULL);
-     empty_or_fail(&q);
 }
 END_TEST
 
 START_TEST (test_multiple_push_pop)
 {
-     struct pkt_queue q;
-     AVPacket pkt, pkt1;
-     initq(&q);
+     PacketQueue q;
+     AVPacket pkt;
+     q = queue_create();
      pkt.data = "SOMETHING";
+
      int i;
      for (i = 0; i < 100; i++) {
           pkt.pts = i;
-          push(&q, &pkt);
+          queue_push(q, &pkt);
      }
 
      for (i = 0; i < 100; i++) {
-          pop(&q, &pkt);
+          queue_pop(q, &pkt);
           fail_unless(pkt.pts == i, NULL);
      }
-
-     empty_or_fail(&q);
           
+}
+END_TEST
+
+void thread_put(void *_q) {
+     PacketQueue q = _q;
+     AVPacket pkt;
+     int i;
+     pkt.data = "SOMETHING";
+     
+     for (i = 0; i < 100; i++) {
+          pkt.pts = i;
+          queue_push(q, &pkt);
+     }
+}
+
+START_TEST (test_thread_contention)
+{
+     AVPacket pkt;
+     PacketQueue q;
+     pthread_t put;
+
+     q = queue_create();
+     pthread_create(&put, NULL, thread_put, q);
+
+     int i = 0;
+     while (i < 100) {
+          while (queue_pop(q, &pkt) == -1)
+               ;
+          fail_unless(pkt.pts == i, NULL);
+          i++;
+     }
 }
 END_TEST
 
 Suite *queue_suite(void) {
      Suite *s = suite_create("queue");
      TCase *tc_core = tcase_create("core");
+     TCase *tc_threads = tcase_create("threads");
 
-     tcase_add_test(tc_core, test_initq);
-     tcase_add_test(tc_core, test_first_push);
-     tcase_add_test(tc_core, test_multiple_push);
-     tcase_add_test(tc_core, test_single_pop);
-     tcase_add_test(tc_core, test_multiple_pop);
      tcase_add_test(tc_core, test_push_pop);
      tcase_add_test(tc_core, test_multiple_push_pop);
+     tcase_add_test(tc_threads, test_thread_contention);
      suite_add_tcase(s, tc_core);
+     suite_add_tcase(s, tc_threads);
 
      return s;
 }
