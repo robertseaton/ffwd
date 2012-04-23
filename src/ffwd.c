@@ -1,6 +1,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
+#include <libavutil/audioconvert.h>
 
 #include <X11/Xlib.h>
 
@@ -95,6 +96,9 @@ int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec 
 
      *codec_ctx = format_ctx->streams[*stream]->codec;
      if (codec != NULL) {
+          if (channels != 0)
+               (*codec_ctx)->request_channels = channels;
+
           *codec = avcodec_find_decoder((*codec_ctx)->codec_id);
 
           if (*codec == NULL)
@@ -119,16 +123,13 @@ int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend) {
      int amount_written = 0;
      int start_threshold;
 
-     if (channels == 0)
-          channels = codec_ctx->channels;
-
-     start_threshold = ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, backend);
+     start_threshold = alsa_get_threshold();
 
      while (amount_written < start_threshold) {
           if (get_frame(codec_ctx, frame, audioq) == -1) 
                return -1;
 
-          if (ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, backend) == -1)
+          if (ao_play(frame, backend) == -1)
                return -1;
 
           amount_written += frame->linesize[0];
@@ -169,6 +170,33 @@ void sleep_until_pts(double start, double pts, double pause_delay) {
      nanosleep(&t, NULL);
 }
 
+int audio_codec_reconfigure(AVCodecContext *codec_ctx, AVCodec *codec) {
+     codec_ctx->request_channels = alsa_get_supported_channels();
+     codec_ctx->request_sample_fmt = alsa_get_supported_av_fmt();
+     
+     codec = avcodec_find_decoder(codec_ctx->codec_id);
+
+     if (codec == NULL)
+          return -1;
+
+     if (codec->capabilities & CODEC_CAP_TRUNCATED)
+          codec_ctx->flags |= CODEC_FLAG_TRUNCATED;
+
+     pthread_mutex_lock(&ffmpeg);
+     if (avcodec_open2(codec_ctx, codec, NULL) < 0)
+          return -1;
+     pthread_mutex_unlock(&ffmpeg);
+
+     if (codec_ctx->channels != alsa_get_supported_channels())
+          errx(1, "ALSA: Failed to reconfigure to a supported number of channels.");
+     else if (codec_ctx->sample_rate != alsa_get_supported_sample_rate())
+          errx(1, "ALSA: Failed to reconfigure to a supported sample rate.");
+     else if (codec_ctx->sample_fmt != alsa_get_supported_av_fmt())
+          errx(1, "ALSA: Failed to reconfigure to a supported format.");
+
+     return 0;
+}
+
 void audio_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
      int stream;
@@ -184,9 +212,13 @@ void audio_loop(void *_format_ctx) {
           return ;
      }
 
+     alsa_initialize(codec_ctx->sample_rate, codec_ctx->channels, codec_ctx->sample_fmt);
+     if (audio_codec_reconfigure(codec_ctx, codec) == -1)
+          errx(1, "Failed to reconfigure audio codec to supported parameters.");
+
      while (get_frame(codec_ctx, frame, audioq) == -1) 
           ;
-     
+
      if (write_to_threshold(frame, codec_ctx, ALSA) == -1) 
           errx(1, "Failed to write past audio start threshold.\n");
 
@@ -212,7 +244,7 @@ void audio_loop(void *_format_ctx) {
 
           sleep_until_pts(audio_start, frame->pkt_pts, pause_delay);
 
-          if (ao_play(frame, codec_ctx->sample_rate, channels, codec_ctx->channels, ALSA) == -1)
+          if (ao_play(frame, ALSA) == -1)
                errx(1, "Failed to decode audio.\n");
 
           if (audio_seek_to != 0) {
