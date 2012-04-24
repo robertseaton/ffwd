@@ -83,7 +83,7 @@ int x11_draw(AVFrame *frame) {
           return -1;
 
      stride = w * ((32 + 7) / 8);
-     sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, &ximg->data, &stride);
+     sws_scale(sws_ctx, (const uint8_t *const *)frame->data, frame->linesize, 0, frame->height, (uint8_t *const *)&ximg->data, &stride);
 
      XPutImage(d, window, gc, ximg, 0, 0, 0, 0, w, h);
      XFlush(d);
