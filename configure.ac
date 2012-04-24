@@ -30,6 +30,9 @@ AC_CHECK_HEADERS([stdlib.h string.h sys/timeb.h])
 AC_HEADER_STDBOOL
 AC_TYPE_UINT64_T
 
+# pretty print build
+AM_SILENT_RULES([yes])
+
 # Checks for library functions.
 AC_FUNC_MALLOC
 AC_CHECK_FUNCS([ftime memset strdup])
