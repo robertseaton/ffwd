@@ -8,7 +8,7 @@
 
 pthread_cond_t is_full = PTHREAD_COND_INITIALIZER;
 
-typedef struct __PacketQueue {
+typedef struct _PacketQueue {
      AVPacketList *first, *last;
      int npkts;
      pthread_mutex_t mutex;
@@ -30,7 +30,7 @@ int queue_push(PacketQueue _q, AVPacket *pkt) {
      _PacketQueue *q = _q;
      AVPacketList *pkt1;
 
-     if (strcmp(pkt->data, "FLUSH") != 0 && av_dup_packet(pkt) < 0)
+     if (strcmp((const char *)pkt->data, "FLUSH") != 0 && av_dup_packet(pkt) < 0)
           return -1;
 
      pkt1 = malloc(sizeof(AVPacketList));

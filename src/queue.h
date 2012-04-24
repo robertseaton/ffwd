@@ -3,7 +3,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 
-typedef struct _PacketQueue *PacketQueue;
+typedef struct _PacketQueue* PacketQueue;
 
 PacketQueue queue_create();
 int queue_push(PacketQueue _q, AVPacket *pkt);
