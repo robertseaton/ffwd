@@ -60,10 +60,7 @@ void x11_fullscreen() {
 
 void x11_event_loop() {
      XEvent ev;
-     char string[25];
-     int len;
      KeySym keysym;
-     double start, how_long;
 
      pthread_mutex_lock(&x11mutex);
      pthread_cond_wait(&initial, &x11mutex);

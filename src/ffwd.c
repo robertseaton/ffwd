@@ -92,7 +92,7 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, PacketQueue q) {
 }
 
 int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int type) {
-     int stream;
+     unsigned int stream;
 
      stream = av_find_best_stream(format_ctx, type, -1, -1, NULL, 0);
      if (stream == AVERROR_STREAM_NOT_FOUND)
@@ -206,7 +206,7 @@ void audio_loop(void *_format_ctx) {
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVFrame *frame;
-     double actual, play_at, paused_at, audio_start;
+     double actual, audio_start;
      double pause_delay = 0;
      bool reset = false;
 
@@ -265,7 +265,6 @@ void video_loop(void *_format_ctx) {
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVFrame *frame;
-     double actual, display_at, paused_at;
      double pause_delay = 0;
 
      if (initialize(format_ctx, &codec_ctx, &codec, &frame, AVMEDIA_TYPE_VIDEO) == -1)
@@ -302,47 +301,6 @@ void video_loop(void *_format_ctx) {
      exit(0);
 }
 
-int get_subtitle(AVCodecContext *codec_ctx) {
-     AVPacket pkt;
-     int got_sub = 0;
-
-     while (true) {
-          if (queue_pop(subtitleq, &pkt) == -1)
-               continue;
-
-          if (pkt.data == flush_pkt.data) {
-               avcodec_flush_buffers(codec_ctx);
-               while (queue_pop(subtitleq, &pkt) == -1)
-                    ;
-          }
-          
-          return 0;
-     }
-}
-
-void subtitle_loop(void *_format_ctx) {
-     AVFormatContext *format_ctx = _format_ctx;
-     AVCodecContext *codec_ctx;
-     AVCodec *codec;
-     AVSubtitle sub;
-     double actual, display_at, paused_at;
-     double pause_delay = 0;
-
-     if (initialize(format_ctx, &codec_ctx, NULL, NULL, AVMEDIA_TYPE_SUBTITLE) == -1)
-          return ;
-
-     while (get_subtitle(codec_ctx) != -1) {
-          pause_delay = wait_if_paused(paused);
-
-          // draw_subtitle(sub);
-
-          if (subtitle_seek_to != 0) {
-                queue_flush(subtitleq);
-                queue_push(subtitleq, &flush_pkt);
-          }
-     }
-}
-
 void feeder(void *_t) {
      AVPacket pkt;
      struct trough *t = _t;
@@ -368,7 +326,7 @@ void usage(char *executable) {
 
 int main(int argc, char *argv[]) {
      AVFormatContext *format_ctx = NULL;
-     pthread_t feedr, audio, video, subtitle;
+     pthread_t feedr, audio, video;
      struct trough t;
      int c;
      int option_index = 0;
@@ -421,9 +379,6 @@ int main(int argc, char *argv[]) {
 
      if (t.astream != -1)
           pthread_create(&audio, NULL, (void *(*)(void *))audio_loop, format_ctx);
-
-     // if (t.sstream != -1)
-     // pthread_create(&subtitle, NULL, subtitle_loop, format_ctx);
 
      kbd_event_loop(KBD_X11);
 }
