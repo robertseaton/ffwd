@@ -39,7 +39,7 @@ double audio_seek_to;
 double video_seek_to;
 double subtitle_seek_to;
 bool seek_backward;
-double *start;
+double start = 0;
 AVPacket flush_pkt;
 
 int channels = 0;
@@ -89,12 +89,14 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, PacketQueue q) {
      }
 }
 
-int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int *stream, int type) {
-     *stream = av_find_best_stream(format_ctx, type, -1, -1, NULL, 0);
-     if (*stream == AVERROR_STREAM_NOT_FOUND)
+int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int type) {
+     int stream;
+
+     stream = av_find_best_stream(format_ctx, type, -1, -1, NULL, 0);
+     if (stream == AVERROR_STREAM_NOT_FOUND)
           return -1;
 
-     *codec_ctx = format_ctx->streams[*stream]->codec;
+     *codec_ctx = format_ctx->streams[stream]->codec;
      if (codec != NULL) {
           if (channels != 0)
                (*codec_ctx)->request_channels = channels;
@@ -199,7 +201,6 @@ int audio_codec_reconfigure(AVCodecContext *codec_ctx, AVCodec *codec) {
 
 void audio_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
-     int stream;
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVFrame *frame;
@@ -207,7 +208,7 @@ void audio_loop(void *_format_ctx) {
      double pause_delay = 0;
      bool reset = false;
 
-     if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_AUDIO) == -1) {
+     if (initialize(format_ctx, &codec_ctx, &codec, &frame, AVMEDIA_TYPE_AUDIO) == -1) {
           warnx("Failed to find or decode audio stream. No sound.\n");
           return ;
      }
@@ -223,8 +224,8 @@ void audio_loop(void *_format_ctx) {
           errx(1, "Failed to write past audio start threshold.\n");
 
 
-     *start = milliseconds_since_epoch();
-     audio_start = *start + frame->pkt_pts;
+     start = milliseconds_since_epoch();
+     audio_start = start + frame->pkt_pts;
 
      while (get_frame(codec_ctx, frame, audioq) != -1) {
 
@@ -236,8 +237,8 @@ void audio_loop(void *_format_ctx) {
                if (write_to_threshold(frame, codec_ctx, ALSA) == -1)
                     errx(1, "Failed to write past audio start threshold.");
                actual = milliseconds_since_epoch() - pause_delay;
-               *start = actual - start_frame;
-               audio_start = *start;
+               start = actual - start_frame;
+               audio_start = start;
                reset = false;
                continue;
           }
@@ -259,15 +260,13 @@ void audio_loop(void *_format_ctx) {
 
 void video_loop(void *_format_ctx) {
      AVFormatContext *format_ctx = _format_ctx;
-     int stream;
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVFrame *frame;
-     struct timespec req;
      double actual, display_at, paused_at;
      double pause_delay = 0;
 
-     if (initialize(format_ctx, &codec_ctx, &codec, &frame, &stream, AVMEDIA_TYPE_VIDEO) == -1)
+     if (initialize(format_ctx, &codec_ctx, &codec, &frame, AVMEDIA_TYPE_VIDEO) == -1)
           errx(1, "Failed to initialize video codec.");
 
      while (get_frame(codec_ctx, frame, videoq) == -1)
@@ -278,7 +277,7 @@ void video_loop(void *_format_ctx) {
 
      while (get_frame(codec_ctx, frame, videoq) != -1) {
           pause_delay = wait_if_paused(paused);
-          sleep_until_pts(*start, frame->pkt_pts, pause_delay);
+          sleep_until_pts(start, frame->pkt_pts, pause_delay);
           
           if (draw(frame, X11) == -1)
                errx(1, "Failed to draw frame.\n");
@@ -324,11 +323,10 @@ void subtitle_loop(void *_format_ctx) {
      AVCodecContext *codec_ctx;
      AVCodec *codec;
      AVSubtitle sub;
-     int stream;
      double actual, display_at, paused_at;
      double pause_delay = 0;
 
-     if (initialize(format_ctx, &codec_ctx, NULL, NULL, &stream, AVMEDIA_TYPE_SUBTITLE) == -1)
+     if (initialize(format_ctx, &codec_ctx, NULL, NULL, AVMEDIA_TYPE_SUBTITLE) == -1)
           return ;
 
      while (get_subtitle(codec_ctx) != -1) {
@@ -405,9 +403,6 @@ int main(int argc, char *argv[]) {
      audioq = queue_create();
      videoq = queue_create();
      subtitleq = queue_create();
-
-     double _start = 0;
-     start = &_start;
 
      t.vstream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
      t.astream = av_find_best_stream(format_ctx, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);

@@ -6,10 +6,10 @@
 
 int alsa_initialized = false;
 snd_pcm_t *pcm_handle;
-int threshold = -1;
-int supported_sample_rate = -1;
-int supported_channels = -1;
-int supported_fmt = -1;
+snd_pcm_uframes_t threshold = -1;
+unsigned int supported_channels = 0;
+unsigned int supported_fmt = 0;
+unsigned int supported_sample_rate = 0;
 
 void alsa_pause() {
      snd_pcm_pause(pcm_handle, 1);
@@ -68,9 +68,10 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
      snd_pcm_sw_params_t *swparams;
      snd_pcm_hw_params_t *hwparams;
      char *pcm_name;
-     int periods = 16;
+     unsigned int periods = 16;
      snd_pcm_uframes_t boundary, chunksz;
 
+     supported_sample_rate = sample_rate;
      pcm_name = strdup("default");
      snd_pcm_hw_params_alloca(&hwparams);
      snd_pcm_sw_params_alloca(&swparams);
@@ -87,13 +88,10 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
      if (snd_pcm_hw_params_set_periods_near(pcm_handle, hwparams, &periods, 0) < 0)
           return -1;
 
-     if (snd_pcm_hw_params_set_rate_near(pcm_handle, hwparams, &sample_rate, 0) < 0)
+     if (snd_pcm_hw_params_set_rate_near(pcm_handle, hwparams, &supported_sample_rate, 0) < 0)
           return -1;
 
-     if (snd_pcm_hw_params_get_rate(hwparams, &supported_sample_rate, 0) < 0)
-          return -1;
-
-     if (snd_pcm_hw_params_set_channels_near(pcm_handle, hwparams, &channels) < 0)
+     if (snd_pcm_hw_params_set_channels_near(pcm_handle, hwparams, (unsigned int *)&channels) < 0)
           return -1;
 
      if (snd_pcm_hw_params_get_channels(hwparams, &supported_channels) < 0)
@@ -106,15 +104,8 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
           while ((fmt = av_format_next_format(fmt)) != start_fmt) {
                if (snd_pcm_hw_params_set_format(pcm_handle, hwparams, av_format_to_alsa_format(fmt)) >= 0)
                     supported_fmt = av_format_to_alsa_format(fmt);
-               return 0;
           }
      }
-
-     if (snd_pcm_hw_params(pcm_handle, hwparams) < 0)
-          return -1;
-
-     if (snd_pcm_hw_params_get_period_size_min(hwparams, &chunksz, NULL) < 0)
-          return -1;
 
      if (snd_pcm_hw_params(pcm_handle, hwparams) < 0)
           return -1;
@@ -128,7 +119,10 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
      if (snd_pcm_sw_params_get_boundary(swparams, &boundary) < 0)
           return -1;
 
-     if (snd_pcm_sw_params_set_start_threshold(pcm_handle, swparams, threshold) < 0)
+     if (snd_pcm_sw_params_set_start_threshold(pcm_handle, swparams, chunksz) < 0)
+          return -1;
+
+     if (snd_pcm_sw_params_get_start_threshold(swparams, &threshold) < 0)
           return -1;
 
      if (snd_pcm_sw_params_set_stop_threshold(pcm_handle, swparams, boundary) < 0)
@@ -139,8 +133,6 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
 
      if (snd_pcm_sw_params(pcm_handle, swparams) < 0)
          return -1;
-
-     threshold = chunksz;
 
      return 0;
 }
@@ -160,7 +152,7 @@ int alsa_get_supported_av_fmt() {
 int alsa_get_threshold() {
      int bytes_per_frame = 2 * supported_channels;
 
-     return threshold * bytes_per_frame * 2; /* 2x prevents underrun */
+     return threshold * bytes_per_frame * 3; /* i'm clearly not calculating this correctly */
 }
 
 void alsa_initialize(int sample_rate, int channels, int fmt) {

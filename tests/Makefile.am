@@ -1,5 +1,5 @@
-TESTS = check_queue
-check_PROGRAMS = check_queue
-check_queue_SOURCES = check_queue.c $(top_builddir)/src/queue.h
-check_queue_CFLAGS = @CHECK_CFLAGS@
-check_queue_LDADD = $(top_builddir)/src/libqueue.la @CHECK_LIBS@
+TESTS = check_ffwd
+check_PROGRAMS = check_ffwd
+check_ffwd_SOURCES = check_ffwd.c check_queue.c check_alsa.c $(top_builddir)/src/queue.h tests.h
+check_ffwd_CFLAGS = @CHECK_CFLAGS@
+check_ffwd_LDADD = $(top_builddir)/src/libqueue.la $(top_builddir)/src/libao.la @CHECK_LIBS@
