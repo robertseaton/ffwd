@@ -87,6 +87,8 @@ int get_frame(AVCodecContext *codec_ctx, AVFrame *frame, PacketQueue q) {
                return 0;
           }
      }
+
+     return -1;
 }
 
 int initialize(AVFormatContext *format_ctx, AVCodecContext **codec_ctx, AVCodec **codec, AVFrame **frame, int type) {
@@ -412,13 +414,13 @@ int main(int argc, char *argv[]) {
      av_init_packet(&flush_pkt);
      flush_pkt.data = "FLUSH";
 
-     pthread_create(&feedr, NULL, feeder, &t);
+     pthread_create(&feedr, NULL, (void *(*)(void *))feeder, &t);
 
      if (t.vstream != -1)
-          pthread_create(&video, NULL, video_loop, format_ctx);
+          pthread_create(&video, NULL, (void *(*)(void *))video_loop, format_ctx);
 
      if (t.astream != -1)
-          pthread_create(&audio, NULL, audio_loop, format_ctx);
+          pthread_create(&audio, NULL, (void *(*)(void *))audio_loop, format_ctx);
 
      // if (t.sstream != -1)
      // pthread_create(&subtitle, NULL, subtitle_loop, format_ctx);
