@@ -11,7 +11,7 @@ AC_CONFIG_MACRO_DIR([m4])
 # Checks for programs.
 AC_PROG_CC
 AM_PROG_CC_C_O
-AM_PATH_CHECK
+PKG_CHECK_MODULES([CHECK], [check >= 0.9.4])
 
 # Checks for libraries.
 something_missing=no
