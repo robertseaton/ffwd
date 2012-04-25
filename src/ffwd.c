@@ -72,7 +72,6 @@ void fill_queue_thread(void *_format_ctx) {
      audio_stream = find_stream(format_ctx, AVMEDIA_TYPE_AUDIO);
 
      initialize_queues();
-     start_playback_threads(format_ctx);
 
      AVPacket pkt;
      while (av_read_frame(format_ctx, &pkt) == 0) { 
@@ -94,7 +93,7 @@ void start_playback_threads(AVFormatContext *format_ctx) {
           pthread_create(&video, NULL, (void *(*)(void *))video_loop, format_ctx);
 
      if (stream_exists(format_ctx, AVMEDIA_TYPE_AUDIO))
-          pthread_create(&audio, NULL, (void *(*)(void *))audio_loop, format_ctx);
+        pthread_create(&audio, NULL, (void *(*)(void *))audio_loop, format_ctx);
 }
 
 void audio_loop(void *_format_ctx) {
