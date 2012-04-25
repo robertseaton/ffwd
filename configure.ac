@@ -13,16 +13,6 @@ AC_PROG_CC
 AM_PROG_CC_C_O
 
 # Checks for libraries.
-something_missing=no
-have_x11=no
-have_alsa=no
-have_avcodec=no
-have_avformat=no
-have_avutil=no
-have_swscale=no
-have_pthread=no
-have_check=no
-
 PKG_CHECK_MODULES([CHECK], [check >= 0.9.4], [have_check=yes], [have_check=no])
 PKG_CHECK_MODULES([DEPS], [alsa x11 libavcodec libavformat libavutil libswscale])
 AC_CHECK_LIB([pthread], [pthread_create])
