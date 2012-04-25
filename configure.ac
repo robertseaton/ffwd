@@ -11,7 +11,6 @@ AC_CONFIG_MACRO_DIR([m4])
 # Checks for programs.
 AC_PROG_CC
 AM_PROG_CC_C_O
-PKG_CHECK_MODULES([CHECK], [check >= 0.9.4], [], [])
 
 # Checks for libraries.
 something_missing=no
@@ -22,6 +21,9 @@ have_avformat=no
 have_avutil=no
 have_swscale=no
 have_pthread=no
+have_check=no
+
+PKG_CHECK_MODULES([CHECK], [check >= 0.9.4], [have_check=yes], [have_check=no])
 
 AC_CHECK_LIB([X11], [XSendEvent], [have_x11=yes])
 AC_CHECK_LIB([asound], [snd_pcm_open], [have_alsa=yes])
