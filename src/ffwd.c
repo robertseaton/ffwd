@@ -73,8 +73,6 @@ void fill_queue_thread(void *_format_ctx) {
      video_stream = find_stream(format_ctx, AVMEDIA_TYPE_VIDEO);
      audio_stream = find_stream(format_ctx, AVMEDIA_TYPE_AUDIO);
 
-
-     start_playback_threads(format_ctx);
      initialize_queues();
 
      AVPacket pkt;
