@@ -152,7 +152,7 @@ int alsa_get_supported_av_fmt() {
 int alsa_get_threshold() {
      int bytes_per_frame = 2 * supported_channels;
 
-     return threshold * bytes_per_frame * 3; /* i'm clearly not calculating this correctly */
+     return threshold * bytes_per_frame * 2; /* i'm clearly not calculating this correctly */
 }
 
 void alsa_initialize(int sample_rate, int channels, int fmt) {
