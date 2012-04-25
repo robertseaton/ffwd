@@ -65,8 +65,12 @@ void wait_until_start_is_set();
 bool stream_exists(AVFormatContext *format_ctx, int type);
 
 void fill_queue_thread(void *_format_ctx) {
+     CALL_ONLY_ONCE();
+
      AVFormatContext *format_ctx = _format_ctx;
-     int video_stream, audio_stream;
+     static int video_stream = -1;
+     static int audio_stream = -1;
+     assert(video_stream == -1 && audio_stream == -1);
 
      video_stream = find_stream(format_ctx, AVMEDIA_TYPE_VIDEO);
      audio_stream = find_stream(format_ctx, AVMEDIA_TYPE_AUDIO);
@@ -86,17 +90,23 @@ void fill_queue_thread(void *_format_ctx) {
      finished = true;         
 }
 
+void create_thread(AVFormatContext *format_ctx, void *function, int type) {
+     pthread_t thread;
+
+     if (stream_exists(format_ctx, type))
+          pthread_create(&thread, NULL, (void *(*)(void *))function, format_ctx);
+}
+
 void start_playback_threads(AVFormatContext *format_ctx) {
-     pthread_t audio, video;
+     CALL_ONLY_ONCE();
 
-     if (stream_exists(format_ctx, AVMEDIA_TYPE_VIDEO))
-          pthread_create(&video, NULL, (void *(*)(void *))video_loop, format_ctx);
-
-     if (stream_exists(format_ctx, AVMEDIA_TYPE_AUDIO))
-        pthread_create(&audio, NULL, (void *(*)(void *))audio_loop, format_ctx);
+     create_thread(format_ctx, video_loop, AVMEDIA_TYPE_VIDEO);
+     create_thread(format_ctx, audio_loop, AVMEDIA_TYPE_AUDIO);
 }
 
 void audio_loop(void *_format_ctx) {
+     CALL_ONLY_ONCE();
+
      AVFormatContext *format_ctx = _format_ctx;
      AVCodecContext codec_ctx;
      AVCodec codec;
@@ -147,6 +157,8 @@ void audio_loop(void *_format_ctx) {
 }
 
 void video_loop(void *_format_ctx) {
+     CALL_ONLY_ONCE();
+
      AVFormatContext *format_ctx = _format_ctx;
      AVCodecContext codec_ctx;
      AVCodec codec;
