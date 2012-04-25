@@ -1,3 +1,4 @@
+AM_CFLAGS = -I/usr/include/ffmpeg -I/usr/local/include/ffmpeg
 lib_LTLIBRARIES = libqueue.la libao.la libvo.la
 libqueue_la_SOURCES = queue.c
 libao_la_SOURCES = ao/alsa.c ao/ao.c
