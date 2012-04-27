@@ -19,6 +19,7 @@
 #include "ao/ao.h"
 #include "vo/vo.h"
 #include "util.h"
+#include "clock.h"
 
 
 PacketQueue audioq, videoq;
@@ -48,7 +49,6 @@ void set_requested_channels(AVCodecContext *codec_ctx);
 void open_codec(AVCodecContext *codec_ctx, AVCodec *codec);
 int write_to_threshold(AVFrame *frame, AVCodecContext *codec_ctx, int backend);
 double wait_if_paused(bool paused);
-double milliseconds_to_nanoseconds(double milliseconds);
 void sleep_until_pts(double start, double pts, double pause_delay);
 void audio_codec_reconfigure(AVCodecContext *codec_ctx, AVCodec *codec);
 void audio_reset(int type);
@@ -109,7 +109,7 @@ void audio_loop(void *_format_ctx) {
      AVCodecContext codec_ctx;
      AVCodec codec;
      AVFrame *frame;
-     double actual, audio_start;
+     double actual, start;
      double pause_delay = 0;
      bool reset = false;
 
@@ -123,26 +123,12 @@ void audio_loop(void *_format_ctx) {
      if (write_to_threshold(frame, &codec_ctx, ALSA) == -1) 
           errx(1, "Failed to write past audio start threshold.\n");
 
-
-     start = milliseconds_since_epoch();
-     audio_start = start + frame->pkt_pts;
+     clock_init();
+     start = clock_started_at() + frame->pkt_pts;
 
      while (get_frame(&codec_ctx, frame, audioq) != -1 || finished == false) {
-
           pause_delay += wait_if_paused(paused);
-
-          if (reset == true) {
-               int start_frame = frame->pkt_pts;
-               if (write_to_threshold(frame, &codec_ctx, ALSA) == -1)
-                    errx(1, "Failed to write past audio start threshold.");
-               actual = milliseconds_since_epoch() - pause_delay;
-               start = actual - start_frame;
-               audio_start = start;
-               reset = false;
-               continue;
-          }
-
-          sleep_until_pts(audio_start, frame->pkt_pts, pause_delay);
+          sleep_until_pts(start, frame->pkt_pts, pause_delay);
 
           if (ao_play(frame, ALSA) == -1)
                errx(1, "Failed to decode audio.\n");
@@ -162,13 +148,15 @@ void video_loop(void *_format_ctx) {
      AVCodec codec;
      AVFrame *frame;
      double pause_delay = 0;
+     double start;
 
      initialize_thread(format_ctx, &codec_ctx, &codec, &frame, AVMEDIA_TYPE_VIDEO);
 
      while (get_frame(&codec_ctx, frame, videoq) == -1)
           ;
 
-     wait_until_start_is_set();
+     clock_init();
+     start = clock_started_at();
 
      while (get_frame(&codec_ctx, frame, videoq) != -1 || finished == false) {
           pause_delay = wait_if_paused(paused);
@@ -314,10 +302,6 @@ double wait_if_paused(bool paused) {
      return pause_delay;
 }
 
-double milliseconds_to_nanoseconds(double milliseconds) {
-     return milliseconds * 1000000;
-}
-
 void sleep_until_pts(double start, double pts, double pause_delay) {
      double actual, play_at, sleep_for;
      struct timespec t;
@@ -376,11 +360,6 @@ void video_seek(AVFormatContext *format_ctx, int pts) {
           warnx("Seek failed.\n");
 
      video_reset();
-}
-
-void wait_until_start_is_set() {
-     while (start == 0)
-          ;
 }
 
 void initialize_flush_packet() {
