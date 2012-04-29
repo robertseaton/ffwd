@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdbool.h>
 #include <err.h>
 
@@ -94,8 +95,8 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
      if (snd_pcm_hw_params_set_channels_near(pcm_handle, hwparams, (unsigned int *)&channels) < 0)
           return -1;
 
-     if (snd_pcm_hw_params_get_channels(hwparams, &supported_channels) < 0)
-          return -1;
+     assert(channels != 0);
+     supported_channels = channels;
 
      if (snd_pcm_hw_params_set_format(pcm_handle, hwparams, av_format_to_alsa_format(fmt)) >= 0)
           supported_fmt = av_format_to_alsa_format(fmt);
@@ -138,10 +139,12 @@ int alsa_initialize2(int sample_rate, int channels, int fmt) {
 }
 
 int alsa_get_supported_sample_rate() {
+     assert(supported_sample_rate != 0);
      return supported_sample_rate;
 }
 
 int alsa_get_supported_channels() {
+     assert(supported_channels != 0);
      return supported_channels;
 }
 
@@ -152,7 +155,7 @@ int alsa_get_supported_av_fmt() {
 int alsa_get_threshold() {
      int bytes_per_frame = 2 * supported_channels;
 
-     return threshold * bytes_per_frame * 2; /* i'm clearly not calculating this correctly */
+     return threshold * bytes_per_frame * 3; /* i'm clearly not calculating this correctly */
 }
 
 void alsa_initialize(int sample_rate, int channels, int fmt) {
@@ -160,10 +163,21 @@ void alsa_initialize(int sample_rate, int channels, int fmt) {
           errx(1, "ALSA: Failed to initialize hwparams.");
 }
 
-int alsa_play(AVFrame *frame) {
-     int bytes_per_frame = 2 * supported_channels;
-     if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / bytes_per_frame) < 0)
-          return -1;
+int frames_to_milliseconds(snd_pcm_sframes_t delay) {
+     return delay / (supported_sample_rate / 1000);
+}
 
-     return 0;
+int alsa_play(AVFrame *frame) {
+     int bytes_per_frame, delay;
+     snd_pcm_sframes_t delay_in_frames;
+
+     bytes_per_frame = 2 * supported_channels;
+ 
+     snd_pcm_delay(pcm_handle, &delay_in_frames);
+     delay = frames_to_milliseconds(delay_in_frames);
+
+      if (snd_pcm_writei(pcm_handle, frame->data[0], frame->linesize[0] / bytes_per_frame) < 0)
+          return -1;
+     
+      return delay;
 }

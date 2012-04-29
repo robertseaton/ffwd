@@ -102,6 +102,18 @@ void start_playback_threads(AVFormatContext *format_ctx) {
      create_thread(format_ctx, audio_loop, AVMEDIA_TYPE_AUDIO);
 }
 
+int target_pts_vs_actual_pts(int target_pts, int delay) {
+     int current_pts, expected_delay, off_by;
+     
+     current_pts = milliseconds_since_epoch() - clock_started_at();
+     printf("current_pts: %d\n", current_pts);
+     expected_delay = target_pts - current_pts;
+     printf("expected_delay: %d\n", expected_delay);
+     off_by = delay - expected_delay;
+
+     return off_by;
+}
+
 void audio_loop(void *_format_ctx) {
      CALL_ONLY_ONCE();
 
@@ -111,6 +123,7 @@ void audio_loop(void *_format_ctx) {
      AVFrame *frame;
      double actual, start;
      double pause_delay = 0;
+     int delay, off_by;
      bool reset = false;
 
      initialize_thread(format_ctx, &codec_ctx, &codec, &frame, AVMEDIA_TYPE_AUDIO);
@@ -130,8 +143,10 @@ void audio_loop(void *_format_ctx) {
           pause_delay += wait_if_paused(paused);
           sleep_until_pts(start, frame->pkt_pts, pause_delay);
 
-          if (ao_play(frame, ALSA) == -1)
+          if ((delay = ao_play(frame, ALSA)) == -1)
                errx(1, "Failed to decode audio.\n");
+
+          off_by = target_pts_vs_actual_pts(frame->pkt_pts, delay);
 
           if (audio_seek_to != 0) {
                audio_reset(ALSA);
